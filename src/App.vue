@@ -201,6 +201,7 @@ import { generateEdl } from './utils/edl'
 import { formatTimecode, formatRelativeDate } from './utils/time'
 
 const props = defineProps<{
+  url?: string
   resource?: any
   space?: any
   currentFileContext?: any
@@ -238,7 +239,10 @@ const newComment = ref({
 })
 
 // Get video URL from OpenCloud resource
+// The AppWrapper provides the 'url' prop when urlForResourceOptions is set
+// and the component declares a 'url' prop
 const videoUrl = computed(() => {
+  if (props.url) return props.url
   if (props.currentFileContext?.url) return props.currentFileContext.url
   if (props.resource?.downloadURL) return props.resource.downloadURL
   return ''

@@ -23,7 +23,10 @@ export default defineWebApplication({
         name: 'video-review',
         path: '/:driveAliasAndItem(.*)?',
         component: AppWrapperRoute(App, {
-          applicationId: appId
+          applicationId: appId,
+          urlForResourceOptions: {
+            disposition: 'inline'
+          }
         }),
         meta: {
           authContext: 'hybrid' as const,
