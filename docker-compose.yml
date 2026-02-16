@@ -1,0 +1,15 @@
+services:
+  opencloud:
+    image: opencloud/opencloud-rolling:latest
+    ports:
+      - "9200:9200"
+    environment:
+      OPENCLOUD_URL: https://host.docker.internal:9200
+      OPENCLOUD_INSECURE: "true"
+      DEMO_USERS: "true"
+      IDM_ADMIN_PASSWORD: admin
+      WEB_ASSET_APPS_PATH: /web/apps
+    volumes:
+      - ./dist:/web/apps/video-review
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

@@ -1,0 +1,3 @@
+external_apps:
+  - id: video-review
+    path: /web/apps/video-review/web-app-video-review.js

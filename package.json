@@ -1,0 +1,39 @@
+{
+  "name": "web-app-video-review",
+  "version": "0.1.0",
+  "description": "Frame.io-style video review and annotation app for OpenCloud",
+  "keywords": ["opencloud", "video", "review", "annotation", "frame.io", "edl"],
+  "license": "MIT",
+  "author": "Jens Sage <contact@jenssage.com>",
+  "homepage": "https://github.com/jenssage/opencloud-video-review",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jenssage/opencloud-video-review.git"
+  },
+  "type": "module",
+  "packageManager": "pnpm@9.15.4",
+  "scripts": {
+    "build": "vite build",
+    "build:w": "vite build --watch",
+    "serve": "vite preview",
+    "test:unit": "vitest run",
+    "lint": "eslint src --ext .ts,.vue",
+    "type-check": "vue-tsc --noEmit"
+  },
+  "dependencies": {
+    "vue": "^3.5.0"
+  },
+  "devDependencies": {
+    "@opencloud-eu/web-pkg": "^1.0.0",
+    "@vitejs/plugin-vue": "^5.2.0",
+    "sass": "^1.83.0",
+    "typescript": "^5.7.0",
+    "vite": "^6.0.0",
+    "vitest": "^3.0.0",
+    "vue-tsc": "^2.2.0",
+    "vue3-gettext": "^3.0.0-beta.6"
+  },
+  "peerDependencies": {
+    "@opencloud-eu/web-pkg": ">=1.0.0"
+  }
+}
