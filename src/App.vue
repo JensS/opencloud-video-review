@@ -75,8 +75,8 @@
           />
         </div>
 
-        <button class="ctrl-btn review-toggle" :class="{ active: reviewMode }" @click="toggleReviewMode" :title="reviewMode ? 'Disable review mode' : 'Enable review mode'">
-          {{ reviewMode ? '📝' : '▶️' }}
+        <button class="ctrl-btn review-toggle" :class="{ active: reviewMode }" @click="toggleReviewMode" :title="reviewMode ? 'Switch to player mode' : 'Switch to review mode'">
+          {{ reviewMode ? 'Review' : 'Player' }}
         </button>
 
         <select v-model="playbackRate" @change="setPlaybackRate" class="speed-select" title="Playback speed">
