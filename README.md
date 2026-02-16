@@ -36,36 +36,101 @@ Any format the browser can play natively:
 ### As an OpenCloud Web App
 
 1. Download the latest release from [Releases](https://github.com/jenssage/opencloud-video-review/releases)
-2. Extract to your OpenCloud web apps directory
-3. Add to your OpenCloud Web configuration:
+2. Copy the `video-review/` folder into your OpenCloud web apps directory:
+   ```
+   $OC_BASE_DATA_PATH/web/assets/apps/video-review/
+   ```
+   By default this is `/var/lib/opencloud/web/assets/apps/video-review/`. If the `apps` directory doesn't exist, create it.
+
+3. Register the app in your OpenCloud Web configuration (e.g. `web.yaml` referenced by `WEB_UI_CONFIG_FILE`):
+   ```yaml
+   apps:
+     - files
+     - search
+     - text-editor
+     - pdf-viewer
+     - preview
+     - app-store
+     - video-review   # ← add this
+   ```
+
+4. **Content Security Policy:** Video playback requires `blob:` in `media-src`. Create a CSP config file (e.g. `csp.yaml`) and reference it via `PROXY_CSP_CONFIG_FILE_LOCATION`:
+   ```yaml
+   directives:
+     child-src: "'self'"
+     connect-src: "'self' blob:"
+     default-src: "'none'"
+     font-src: "'self'"
+     frame-ancestors: "'self'"
+     frame-src: "'self' blob:"
+     img-src: "'self' data: blob:"
+     manifest-src: "'self'"
+     media-src: "'self' blob:"
+     object-src: "'self' blob:"
+     script-src: "'self' 'unsafe-inline'"
+     style-src: "'self' 'unsafe-inline'"
+   ```
+   > ⚠️ Use **hyphens** (`media-src`), not underscores (`media_src`).
+
+5. Restart OpenCloud.
+
+#### Docker Compose Example
 
 ```yaml
-web:
-  config:
-    external_apps:
-      - id: video-review
-        path: /path/to/web-app-video-review.js
+services:
+  opencloud:
+    image: opencloudeu/opencloud:latest
+    ports:
+      - "9200:9200"
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["opencloud init || true; opencloud server"]
+    environment:
+      OC_URL: https://localhost:9200
+      OC_INSECURE: "true"
+      IDM_CREATE_DEMO_USERS: "true"
+      IDM_ADMIN_PASSWORD: admin
+      PROXY_ENABLE_BASIC_AUTH: "true"
+      WEB_ASSET_APPS_PATH: /web/apps
+      WEB_UI_CONFIG_FILE: /etc/opencloud/web.yaml
+      PROXY_CSP_CONFIG_FILE_LOCATION: /etc/opencloud/csp.yaml
+    volumes:
+      - ocdata:/etc/opencloud
+      - ./dist:/web/apps/video-review
+      - ./config/csp.yaml:/etc/opencloud/csp.yaml:ro
+      - ./config/web.yaml:/etc/opencloud/web.yaml:ro
+volumes:
+  ocdata:
 ```
 
-4. Restart OpenCloud
+#### Important Notes
+
+- The build output **must** use `.js` extension — OpenCloud has no MIME mapping for `.cjs` and browsers reject it.
+- CSS is inlined into the JS bundle via a custom Vite plugin (single-file deployment).
+- The `opencloud init` entrypoint is required on first start to generate JWT secrets and certificates.
 
 ### Development
 
 ```bash
 # Clone
-git clone https://github.com/jenssage/opencloud-video-review.git
+git clone https://github.com/JensS/opencloud-video-review.git
 cd opencloud-video-review
 
 # Install dependencies
-pnpm install
+npm install
 
-# Development with hot reload
-pnpm build:w
+# Build (outputs single dist/web-app-video-review.js)
+npm run build
 
-# In another terminal, start OpenCloud dev environment
-docker compose up
+# Start OpenCloud dev environment
+docker compose up -d
 
-# Open https://host.docker.internal:9200
+# Open https://localhost:9200 (accept self-signed cert)
+# Login: admin / admin
+```
+
+For development with rebuild-on-change:
+```bash
+npx vite build --watch
 ```
 
 ## ⌨️ Keyboard Shortcuts
