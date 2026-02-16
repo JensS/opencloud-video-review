@@ -87,7 +87,7 @@
     <aside class="sidebar" v-if="sidebarOpen && reviewMode">
       <div class="sidebar-header">
         <h2>Comments</h2>
-        <button class="share-review-btn" @click="shareForReview" :disabled="sharingInProgress" :title="shareTooltip">
+        <button v-if="isAuthenticated" class="share-review-btn" @click="shareForReview" :disabled="sharingInProgress" :title="shareTooltip">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
           {{ shareBtnLabel }}
         </button>
@@ -264,6 +264,9 @@ const newComment = ref({
   text: '',
   color: 'yellow' as string,
 })
+
+// Auth detection — used to hide features and prevent browser Basic Auth popups for guests
+const isAuthenticated = computed(() => !!getAuthToken())
 
 // Get video URL from OpenCloud resource
 // The AppWrapper provides the 'url' prop when urlForResourceOptions is set
@@ -613,6 +616,10 @@ function autoSaveExports() {
 
 async function doAutoSave() {
   if (!comments.value.length && approval.value === 'pending') return
+
+  // Skip auto-save entirely when not authenticated (prevents browser Basic Auth popups)
+  const token = getAuthToken()
+  if (!token) return
 
   const resource = props.resource
   if (!resource) return

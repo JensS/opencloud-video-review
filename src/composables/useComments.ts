@@ -14,6 +14,7 @@ export function useComments(fileId: ComputedRef<string>, props: any) {
   const comments = ref<ReviewComment[]>([])
   const approval = ref<ApprovalStatus>('pending')
   const canWriteRemote = ref(false)
+  let loaded = false
 
   const storageKey = () => `vr-comments-${fileId.value}`
 
@@ -46,6 +47,7 @@ export function useComments(fileId: ComputedRef<string>, props: any) {
             comments.value = data.comments || []
             approval.value = data.approval || 'pending'
             canWriteRemote.value = true
+            loaded = true
             return
           }
         }
@@ -65,6 +67,8 @@ export function useComments(fileId: ComputedRef<string>, props: any) {
     } catch {
       // ignore
     }
+
+    loaded = true
   }
 
   async function saveComments() {
@@ -118,8 +122,17 @@ export function useComments(fileId: ComputedRef<string>, props: any) {
     saveComments()
   }
 
-  // Auto-save when comments change
-  watch(comments, () => saveComments(), { deep: true })
+  // Auto-save when comments change (skip initial load)
+  watch(comments, () => {
+    if (loaded) saveComments()
+  }, { deep: true })
+
+  // Reload comments when fileId changes (resource may not be ready at mount)
+  watch(fileId, (newId, oldId) => {
+    if (newId && newId !== 'unknown' && newId !== oldId) {
+      loadComments()
+    }
+  })
 
   return {
     comments,
