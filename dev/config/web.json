@@ -1,0 +1,23 @@
+{
+  "apps": [
+    "files",
+    "search",
+    "text-editor",
+    "pdf-viewer",
+    "external",
+    "admin-settings",
+    "epub-reader",
+    "preview",
+    "app-store"
+  ],
+  "external_apps": [
+    {
+      "id": "video-review",
+      "path": "https://localhost:9200/assets/apps/video-review/web-app-video-review.js"
+    }
+  ],
+  "options": {
+    "contextHelpersReadMore": true,
+    "tokenStorageLocal": true
+  }
+}
