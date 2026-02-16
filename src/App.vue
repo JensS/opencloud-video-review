@@ -37,8 +37,12 @@
           <span v-else>▶</span>
         </button>
 
-        <button class="ctrl-btn" @click="skipBack" title="Back 5s">⏪</button>
-        <button class="ctrl-btn" @click="skipForward" title="Forward 5s">⏩</button>
+        <button class="ctrl-btn skip-btn" @click="skipBack" title="Back 5s">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="19 20 9 12 19 4 19 20"/><line x1="5" y1="19" x2="5" y2="5"/></svg>
+        </button>
+        <button class="ctrl-btn skip-btn" @click="skipForward" title="Forward 5s">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19"/></svg>
+        </button>
 
         <span class="timecode">{{ formatTimecode(currentTime) }} / {{ formatTimecode(duration) }}</span>
 
@@ -83,14 +87,6 @@
     <aside class="sidebar" v-if="sidebarOpen && reviewMode">
       <div class="sidebar-header">
         <h2>Comments</h2>
-        <div class="sidebar-actions">
-          <button @click="exportEdl" class="export-btn" title="Export as EDL for DaVinci Resolve">
-            📋 EDL
-          </button>
-          <button @click="exportJson" class="export-btn" title="Export as JSON">
-            💾 JSON
-          </button>
-        </div>
       </div>
 
       <!-- Add comment -->
@@ -378,10 +374,13 @@ function addComment() {
   localStorage.setItem('vr-author', newComment.value.author)
   newComment.value.text = ''
   drawingDataUrl.value = ''
+  // Auto-save EDL + JSON sidecar to OpenCloud folder
+  autoSaveExports()
 }
 
 function deleteComment(id: string) {
   removeComment(id)
+  autoSaveExports()
 }
 
 function jumpToComment(comment: ReviewComment) {
@@ -465,33 +464,70 @@ function endDraw() {
   isMouseDown = false
 }
 
-// Export
-function exportEdl() {
-  const edl = generateEdl(sortedComments.value, fileName.value, duration.value)
-  downloadFile(edl, `${fileName.value}.edl`, 'text/plain')
+// Auto-save EDL + JSON exports to the same OpenCloud folder via WebDAV
+let autoSaveTimer: ReturnType<typeof setTimeout> | null = null
+
+function autoSaveExports() {
+  // Debounce: wait 2s after last change before saving
+  if (autoSaveTimer) clearTimeout(autoSaveTimer)
+  autoSaveTimer = setTimeout(() => doAutoSave(), 2000)
 }
 
-function exportJson() {
-  const data: ReviewData = {
-    version: 1,
-    fileId: fileId.value,
-    fileName: fileName.value,
-    duration: duration.value,
-    approval: approval.value,
-    comments: comments.value,
-    exportedAt: new Date().toISOString(),
+async function doAutoSave() {
+  if (!comments.value.length && approval.value === 'pending') return
+
+  const resource = props.resource
+  if (!resource) return
+
+  const webDavPath = resource.webDavPath || resource.path
+  if (!webDavPath) return
+
+  const basePath = webDavPath.replace(/\/?$/, '')
+
+  // Save EDL
+  try {
+    const edl = generateEdl(sortedComments.value, fileName.value, duration.value)
+    await putWebDavFile(`${basePath}.edl`, edl)
+  } catch (e) {
+    console.warn('[VideoReview] Could not auto-save EDL:', e)
   }
-  downloadFile(JSON.stringify(data, null, 2), `${fileName.value}.review.json`, 'application/json')
+
+  // Save JSON
+  try {
+    const data: ReviewData = {
+      version: 1,
+      fileId: fileId.value,
+      fileName: fileName.value,
+      duration: duration.value,
+      approval: approval.value,
+      comments: comments.value,
+      exportedAt: new Date().toISOString(),
+    }
+    await putWebDavFile(`${basePath}.review.json`, JSON.stringify(data, null, 2))
+  } catch (e) {
+    console.warn('[VideoReview] Could not auto-save JSON:', e)
+  }
 }
 
-function downloadFile(content: string, name: string, type: string) {
-  const blob = new Blob([content], { type })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = name
-  a.click()
-  URL.revokeObjectURL(url)
+async function putWebDavFile(path: string, content: string) {
+  // Use fetch with the current auth token to PUT via WebDAV
+  const token = sessionStorage.getItem('oc_accessToken') ||
+    localStorage.getItem('oc_accessToken') || ''
+  const baseUrl = window.location.origin
+  const url = `${baseUrl}/remote.php/dav${path}`
+
+  const response = await fetch(url, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/octet-stream',
+      ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+    },
+    body: content,
+  })
+
+  if (!response.ok && response.status !== 201 && response.status !== 204) {
+    throw new Error(`WebDAV PUT failed: ${response.status}`)
+  }
 }
 
 // Lifecycle
