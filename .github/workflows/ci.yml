@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [20, 22]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Type check
+        run: pnpm type-check
+
+      - name: Build
+        run: pnpm build
+
+      - name: Unit tests
+        run: pnpm test:unit
+
+      - name: Check bundle size
+        run: |
+          SIZE=$(du -sk dist/ | cut -f1)
+          echo "Bundle size: ${SIZE}KB"
+          if [ "$SIZE" -gt 512 ]; then
+            echo "::warning::Bundle exceeds 512KB ($SIZE KB)"
+          fi
+
+      - name: Upload build artifact
+        if: matrix.node-version == 22 && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-app-video-review
+          path: dist/
+          retention-days: 30

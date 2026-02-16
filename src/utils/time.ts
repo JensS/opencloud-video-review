@@ -31,6 +31,8 @@ export function formatTimecodeEdl(seconds: number, fps: number = 24): string {
 export function formatRelativeDate(iso: string): string {
   try {
     const date = new Date(iso)
+    if (isNaN(date.getTime())) return ''
+
     const now = new Date()
     const diffMs = now.getTime() - date.getTime()
     const diffMin = Math.floor(diffMs / 60000)
