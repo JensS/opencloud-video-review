@@ -87,6 +87,10 @@
     <aside class="sidebar" v-if="sidebarOpen && reviewMode">
       <div class="sidebar-header">
         <h2>Comments</h2>
+        <button class="share-review-btn" @click="shareForReview" :disabled="sharingInProgress" :title="shareTooltip">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+          {{ shareBtnLabel }}
+        </button>
       </div>
 
       <!-- Add comment -->
@@ -462,6 +466,130 @@ function doDraw(e: MouseEvent) {
 
 function endDraw() {
   isMouseDown = false
+}
+
+// Share for Review — creates a public link and copies the review URL
+const sharingInProgress = ref(false)
+const shareBtnLabel = ref('Share')
+const shareTooltip = ref('Create a review link for this video')
+
+async function shareForReview() {
+  if (sharingInProgress.value) return
+  sharingInProgress.value = true
+  shareBtnLabel.value = '...'
+
+  try {
+    const resource = props.resource
+    if (!resource) throw new Error('No resource')
+
+    const resourceId = resource.fileId || resource.id
+    if (!resourceId) throw new Error('No resource ID')
+
+    // Get auth token
+    const token = getAuthToken()
+    const baseUrl = window.location.origin
+
+    // Create a public link via OpenCloud Graph API
+    const driveId = resource.storageId || resource.parentFolderId?.split('!')[0] || ''
+    const itemId = resourceId
+
+    // Use the sharing API to create a public link
+    const shareResponse = await fetch(`${baseUrl}/graph/v1.0/drives/${driveId}/items/${itemId}/createLink`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({
+        type: 'view',
+        '@libre.graph.quickLink': false,
+      }),
+    })
+
+    if (!shareResponse.ok) {
+      // Fallback: try the OCS sharing API
+      const ocsResponse = await fetch(`${baseUrl}/ocs/v2.php/apps/files_sharing/api/v1/shares?format=json`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        },
+        body: new URLSearchParams({
+          path: resource.path || resource.webDavPath || '',
+          shareType: '3', // public link
+          permissions: '1', // read
+        }),
+      })
+
+      if (!ocsResponse.ok) throw new Error('Could not create share link')
+      const ocsData = await ocsResponse.json()
+      const shareToken = ocsData?.ocs?.data?.token
+      if (!shareToken) throw new Error('No share token returned')
+
+      const reviewUrl = `${baseUrl}/s/${shareToken}?app=video-review`
+      await copyToClipboard(reviewUrl)
+    } else {
+      const data = await shareResponse.json()
+      const webUrl = data?.link?.webUrl
+      if (webUrl) {
+        const reviewUrl = `${webUrl}?app=video-review`
+        await copyToClipboard(reviewUrl)
+      } else {
+        throw new Error('No webUrl in response')
+      }
+    }
+
+    shareBtnLabel.value = 'Copied!'
+    shareTooltip.value = 'Review link copied to clipboard'
+    setTimeout(() => {
+      shareBtnLabel.value = 'Share'
+      shareTooltip.value = 'Create a review link for this video'
+    }, 3000)
+  } catch (e) {
+    console.error('[VideoReview] Share failed:', e)
+    shareBtnLabel.value = 'Failed'
+    setTimeout(() => { shareBtnLabel.value = 'Share' }, 2000)
+  } finally {
+    sharingInProgress.value = false
+  }
+}
+
+function getAuthToken(): string {
+  // Try multiple storage locations for the access token
+  try {
+    // OpenCloud stores tokens in sessionStorage/localStorage
+    for (const storage of [sessionStorage, localStorage]) {
+      for (const key of Object.keys(storage)) {
+        if (key.includes('oidc') || key.includes('access_token')) {
+          try {
+            const data = JSON.parse(storage.getItem(key) || '')
+            if (data?.access_token) return data.access_token
+          } catch { /* not JSON */ }
+        }
+      }
+    }
+    // Direct token storage
+    return sessionStorage.getItem('oc_accessToken') ||
+      localStorage.getItem('oc_accessToken') || ''
+  } catch {
+    return ''
+  }
+}
+
+async function copyToClipboard(text: string) {
+  try {
+    await navigator.clipboard.writeText(text)
+  } catch {
+    // Fallback for HTTP/non-secure contexts
+    const ta = document.createElement('textarea')
+    ta.value = text
+    ta.style.position = 'fixed'
+    ta.style.opacity = '0'
+    document.body.appendChild(ta)
+    ta.select()
+    document.execCommand('copy')
+    document.body.removeChild(ta)
+  }
 }
 
 // Auto-save EDL + JSON exports to the same OpenCloud folder via WebDAV

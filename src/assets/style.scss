@@ -220,6 +220,26 @@
   }
 }
 
+.share-review-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #1a1a1a;
+  border: 1px solid #333;
+  color: #a3a3a3;
+  padding: 5px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s;
+
+  &:hover:not(:disabled) { background: #262626; color: #e5e5e5; border-color: #3b82f6; }
+  &:disabled { opacity: 0.5; cursor: default; }
+
+  svg { flex-shrink: 0; }
+}
+
 .skip-btn {
   display: flex;
   align-items: center;
