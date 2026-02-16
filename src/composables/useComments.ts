@@ -19,16 +19,17 @@ export function useComments(fileId: ComputedRef<string>, props: any) {
 
   function getAuthToken(): string {
     try {
-      for (const storage of [sessionStorage, localStorage]) {
-        for (let i = 0; i < storage.length; i++) {
-          const key = storage.key(i)
-          if (!key) continue
-          if (key.startsWith('oidc.user:')) {
-            try {
-              const data = JSON.parse(storage.getItem(key) || '')
-              if (data?.access_token) return data.access_token
-            } catch { /* not JSON */ }
-          }
+      // Only sessionStorage — localStorage may have stale tokens from previous sessions
+      for (let i = 0; i < sessionStorage.length; i++) {
+        const key = sessionStorage.key(i)
+        if (!key) continue
+        if (key.startsWith('oidc.user:')) {
+          try {
+            const data = JSON.parse(sessionStorage.getItem(key) || '')
+            if (!data?.access_token) continue
+            if (data.expires_at && data.expires_at < Date.now() / 1000) continue
+            return data.access_token
+          } catch { /* not JSON */ }
         }
       }
       return ''
