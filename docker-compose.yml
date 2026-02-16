@@ -1,6 +1,6 @@
 services:
   opencloud:
-    image: opencloud/opencloud-rolling:latest
+    image: opencloudeu/opencloud:latest
     ports:
       - "9200:9200"
     environment:
