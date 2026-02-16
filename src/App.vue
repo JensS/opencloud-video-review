@@ -198,10 +198,9 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch, nextTick, readonly } from 'vue'
-import type { ReviewComment, ReviewData, ApprovalStatus } from './types'
+import type { ReviewComment, ApprovalStatus } from './types'
 import { onClickOutside } from './utils/clickOutside'
 import { useComments } from './composables/useComments'
-import { generateEdl } from './utils/edl'
 import { formatTimecode, formatRelativeDate } from './utils/time'
 
 const props = defineProps<{
@@ -279,9 +278,6 @@ const newComment = ref({
   color: 'yellow' as string,
 })
 
-// Auth detection
-const isAuthenticated = ref(false)
-
 // Get video URL from OpenCloud resource
 // The AppWrapper provides the 'url' prop when urlForResourceOptions is set
 // and the component declares a 'url' prop
@@ -302,7 +298,7 @@ const fileName = computed(() => {
 })
 
 // Comments management
-const { comments, approval, loadComments, addCommentToStore, removeComment, setApprovalStatus, getAuthToken: getAuthTokenFromComments, getShareToken } = useComments(fileId, props)
+const { comments, approval, loadComments, addCommentToStore, removeComment, setApprovalStatus, getReviewId } = useComments(fileId, props)
 
 const sortedComments = computed(() =>
   [...comments.value].sort((a, b) => a.timestamp - b.timestamp)
@@ -403,13 +399,10 @@ function addComment() {
   localStorage.setItem('vr-author', newComment.value.author)
   newComment.value.text = ''
   drawingDataUrl.value = ''
-  // Auto-save EDL + JSON sidecar to OpenCloud folder
-  autoSaveExports()
 }
 
 function deleteComment(id: string) {
   removeComment(id)
-  autoSaveExports()
 }
 
 function jumpToComment(comment: ReviewComment) {
@@ -507,66 +500,72 @@ async function shareForReview() {
     const resource = props.resource
     if (!resource) throw new Error('No resource')
 
-    const token = getAuthToken()
-    if (!token) throw new Error('Not authenticated — please log in to share')
     const baseUrl = window.location.origin
     const filePath = resource.path || resource.webDavPath || ''
     if (!filePath) throw new Error('No file path')
 
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/x-www-form-urlencoded',
-    }
-    if (token) headers['Authorization'] = `Bearer ${token}`
+    // Generate a reviewId based on fileId (deterministic — same file = same review)
+    const reviewId = getReviewId() || fileId.value
+    if (!reviewId || reviewId === 'unknown') throw new Error('No file ID available')
 
-    // First check if a public link already exists for this file
-    const listRes = await fetch(
-      `${baseUrl}/ocs/v2.php/apps/files_sharing/api/v1/shares?format=json&path=${encodeURIComponent(filePath)}&share_types=3`,
-      { headers, credentials: 'omit' }
-    )
+    // First, create a public share link for viewing the video
+    const token = getAuthToken()
+    let shareUrl = ''
 
-    let shareToken = ''
-
-    if (listRes.ok) {
-      const listData = await listRes.json()
-      const existing = listData?.ocs?.data?.[0]
-      if (existing?.token) {
-        shareToken = existing.token
+    if (token) {
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Authorization': `Bearer ${token}`,
       }
-    }
 
-    // Create new share if none exists
-    if (!shareToken) {
-      const createRes = await fetch(
-        `${baseUrl}/ocs/v2.php/apps/files_sharing/api/v1/shares?format=json`,
-        {
-          method: 'POST',
-          headers,
-          credentials: 'omit',
-          body: new URLSearchParams({
-            path: filePath,
-            shareType: '3',
-            permissions: '15',
-            name: `Review: ${fileName.value}`,
-          }),
-        }
+      // Check for existing share
+      const listRes = await fetch(
+        `${baseUrl}/ocs/v2.php/apps/files_sharing/api/v1/shares?format=json&path=${encodeURIComponent(filePath)}&share_types=3`,
+        { headers, credentials: 'omit' }
       )
 
-      if (!createRes.ok) {
-        const errText = await createRes.text()
-        throw new Error(`Share API ${createRes.status}: ${errText}`)
+      let shareToken = ''
+      if (listRes.ok) {
+        const listData = await listRes.json()
+        const existing = listData?.ocs?.data?.[0]
+        if (existing?.token) shareToken = existing.token
       }
 
-      const createData = await createRes.json()
-      shareToken = createData?.ocs?.data?.token
-      if (!shareToken) throw new Error('No share token returned')
+      // Create share if needed
+      if (!shareToken) {
+        const createRes = await fetch(
+          `${baseUrl}/ocs/v2.php/apps/files_sharing/api/v1/shares?format=json`,
+          {
+            method: 'POST',
+            headers,
+            credentials: 'omit',
+            body: new URLSearchParams({
+              path: filePath,
+              shareType: '3',
+              permissions: '1',
+              name: `Review: ${fileName.value}`,
+            }),
+          }
+        )
+        if (createRes.ok) {
+          const createData = await createRes.json()
+          shareToken = createData?.ocs?.data?.token || ''
+        }
+      }
+
+      if (shareToken) {
+        shareUrl = `${baseUrl}/s/${shareToken}?reviewId=${encodeURIComponent(reviewId)}`
+      }
     }
 
-    // Build a direct URL to our app route for the public share
-    // Pattern: /video-review/public/{token}/{filename}?fileId={itemId}
-    const fName = encodeURIComponent(fileName.value)
-    const itemId = resource.fileId || resource.id || ''
-    const reviewUrl = `${baseUrl}/video-review/public/${shareToken}/${fName}?fileId=${encodeURIComponent(itemId)}`
-    await copyToClipboard(reviewUrl)
+    // Fallback: current URL with reviewId param
+    if (!shareUrl) {
+      const url = new URL(window.location.href)
+      url.searchParams.set('reviewId', reviewId)
+      shareUrl = url.toString()
+    }
+
+    await copyToClipboard(shareUrl)
 
     shareBtnLabel.value = 'Copied!'
     shareTooltip.value = 'Review link copied to clipboard'
@@ -585,18 +584,15 @@ async function shareForReview() {
 
 function getAuthToken(): string {
   try {
-    // Search both sessionStorage and localStorage for OIDC access tokens
     for (const storage of [sessionStorage, localStorage]) {
       for (let i = 0; i < storage.length; i++) {
         const key = storage.key(i)
         if (!key) continue
         try {
           const raw = storage.getItem(key) || ''
-          // Skip non-JSON
           if (!raw.startsWith('{')) continue
           const data = JSON.parse(raw)
           if (data?.access_token) {
-            // Skip expired tokens
             if (data.expires_at && data.expires_at < Date.now() / 1000) continue
             return data.access_token
           }
@@ -625,81 +621,6 @@ async function copyToClipboard(text: string) {
   }
 }
 
-// Auto-save EDL + JSON exports to the same OpenCloud folder via WebDAV
-let autoSaveTimer: ReturnType<typeof setTimeout> | null = null
-
-function autoSaveExports() {
-  // Debounce: wait 2s after last change before saving
-  if (autoSaveTimer) clearTimeout(autoSaveTimer)
-  autoSaveTimer = setTimeout(() => doAutoSave(), 2000)
-}
-
-async function doAutoSave() {
-  if (!comments.value.length && approval.value === 'pending') return
-
-  // Skip auto-save entirely when not authenticated (prevents browser Basic Auth popups)
-  const token = getAuthToken()
-  if (!token) return
-
-  const resource = props.resource
-  if (!resource) return
-
-  const webDavPath = resource.webDavPath || resource.path
-  if (!webDavPath) return
-
-  const basePath = webDavPath.replace(/\/?$/, '')
-
-  // Save EDL
-  try {
-    const edl = generateEdl(sortedComments.value, fileName.value, duration.value)
-    await putWebDavFile(`${basePath}.edl`, edl)
-  } catch (e) {
-    console.warn('[VideoReview] Could not auto-save EDL:', e)
-  }
-
-  // Save JSON
-  try {
-    const data: ReviewData = {
-      version: 1,
-      fileId: fileId.value,
-      fileName: fileName.value,
-      duration: duration.value,
-      approval: approval.value,
-      comments: comments.value,
-      exportedAt: new Date().toISOString(),
-    }
-    await putWebDavFile(`${basePath}.review.json`, JSON.stringify(data, null, 2))
-  } catch (e) {
-    console.warn('[VideoReview] Could not auto-save JSON:', e)
-  }
-}
-
-async function putWebDavFile(path: string, content: string) {
-  const token = getAuthToken()
-  // Skip WebDAV calls entirely when not authenticated (prevents Basic Auth popup)
-  if (!token) {
-    console.info('[VideoReview] No auth token — skipping WebDAV save (guest mode)')
-    return
-  }
-
-  const baseUrl = window.location.origin
-  const url = `${baseUrl}/remote.php/dav${path}`
-
-  const response = await fetch(url, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'application/octet-stream',
-      'Authorization': `Bearer ${token}`,
-    },
-    credentials: 'omit',
-    body: content,
-  })
-
-  if (!response.ok && response.status !== 201 && response.status !== 204) {
-    throw new Error(`WebDAV PUT failed: ${response.status}`)
-  }
-}
-
 // Update pen color when comment color changes during drawing
 watch(() => newComment.value.color, (color) => {
   if (drawCtx && isDrawing.value) {
@@ -713,7 +634,6 @@ onClickOutside(statusDropdownEl, () => { statusDropdownOpen.value = false })
 
 onMounted(() => {
   document.addEventListener('keydown', onKeydown)
-  isAuthenticated.value = !!getAuthToken()
   loadComments()
 })
 
