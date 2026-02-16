@@ -585,18 +585,21 @@ async function shareForReview() {
 
 function getAuthToken(): string {
   try {
-    // OpenCloud stores OIDC user data in sessionStorage with key pattern: oidc.user:...
-    // Only check sessionStorage (per-tab) — localStorage may have stale tokens from previous sessions
-    for (let i = 0; i < sessionStorage.length; i++) {
-      const key = sessionStorage.key(i)
-      if (!key) continue
-      if (key.startsWith('oidc.user:')) {
+    // Search both sessionStorage and localStorage for OIDC access tokens
+    for (const storage of [sessionStorage, localStorage]) {
+      for (let i = 0; i < storage.length; i++) {
+        const key = storage.key(i)
+        if (!key) continue
         try {
-          const data = JSON.parse(sessionStorage.getItem(key) || '')
-          if (!data?.access_token) continue
-          // Check if token is expired (JWT has 3 dot-separated base64 parts)
-          if (data.expires_at && data.expires_at < Date.now() / 1000) continue
-          return data.access_token
+          const raw = storage.getItem(key) || ''
+          // Skip non-JSON
+          if (!raw.startsWith('{')) continue
+          const data = JSON.parse(raw)
+          if (data?.access_token) {
+            // Skip expired tokens
+            if (data.expires_at && data.expires_at < Date.now() / 1000) continue
+            return data.access_token
+          }
         } catch { /* not JSON */ }
       }
     }
