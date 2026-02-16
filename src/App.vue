@@ -302,7 +302,7 @@ const fileName = computed(() => {
 })
 
 // Comments management
-const { comments, approval, loadComments, addCommentToStore, removeComment, setApprovalStatus } = useComments(fileId, props)
+const { comments, approval, loadComments, addCommentToStore, removeComment, setApprovalStatus, getAuthToken: getAuthTokenFromComments, getShareToken } = useComments(fileId, props)
 
 const sortedComments = computed(() =>
   [...comments.value].sort((a, b) => a.timestamp - b.timestamp)
@@ -545,7 +545,7 @@ async function shareForReview() {
           body: new URLSearchParams({
             path: filePath,
             shareType: '3',
-            permissions: '1',
+            permissions: '15',
             name: `Review: ${fileName.value}`,
           }),
         }

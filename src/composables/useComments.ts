@@ -4,11 +4,10 @@ import type { ReviewComment, ApprovalStatus } from '../types'
 /**
  * Comments storage composable.
  *
- * Storage strategy (in priority order):
- * 1. Sidecar JSON file via WebDAV fetch (if authenticated)
- * 2. LocalStorage fallback (always, for guests and as backup)
- *
- * The sidecar file is stored next to the video as `<filename>.review.json`.
+ * Storage strategy:
+ * 1. Authenticated users: Sidecar JSON via WebDAV + Bearer token
+ * 2. Public share guests: Sidecar JSON via public-files WebDAV + Basic auth (share token)
+ * 3. Fallback: localStorage (always, as backup)
  */
 export function useComments(fileId: ComputedRef<string>, props: any) {
   const comments = ref<ReviewComment[]>([])
@@ -16,6 +15,8 @@ export function useComments(fileId: ComputedRef<string>, props: any) {
   let loaded = false
 
   const storageKey = () => `vr-comments-${fileId.value}`
+
+  // === Auth helpers ===
 
   function getAuthToken(): string {
     try {
@@ -40,6 +41,24 @@ export function useComments(fileId: ComputedRef<string>, props: any) {
     }
   }
 
+  function getShareToken(): string {
+    try {
+      // OpenCloud share URLs: /s/{token} in path or hash
+      const path = window.location.pathname + window.location.hash
+      const match = path.match(/\/s\/([a-zA-Z0-9_-]+)/)
+      if (match) return match[1]
+      // Also check URL params
+      const params = new URLSearchParams(window.location.search)
+      const token = params.get('shareToken') || params.get('token')
+      if (token) return token
+      return ''
+    } catch {
+      return ''
+    }
+  }
+
+  // === WebDAV helpers ===
+
   function getSidecarWebDavPath(): string | null {
     try {
       const resource = props.resource
@@ -52,26 +71,62 @@ export function useComments(fileId: ComputedRef<string>, props: any) {
     }
   }
 
-  async function loadFromSidecar(): Promise<boolean> {
-    const token = getAuthToken()
-    if (!token) return false
+  function getSidecarFileName(): string {
+    const resource = props.resource
+    const name = resource?.name || 'video'
+    return `${name}.review.json`
+  }
 
+  /**
+   * Make a WebDAV request with the best available auth method.
+   * Returns the response or null on failure.
+   */
+  async function webdavRequest(
+    method: string,
+    path: string,
+    body?: string,
+  ): Promise<Response | null> {
+    const baseUrl = window.location.origin
+    const headers: Record<string, string> = {}
+    if (body) headers['Content-Type'] = 'application/octet-stream'
+
+    // Strategy 1: Bearer token (authenticated user)
+    const token = getAuthToken()
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`
+      try {
+        const url = `${baseUrl}/remote.php/dav${path}`
+        const res = await fetch(url, { method, headers, credentials: 'omit', body })
+        if (res.ok || res.status === 201 || res.status === 204) return res
+      } catch { /* fall through */ }
+    }
+
+    // Strategy 2: Public share Basic auth (guest)
+    const shareToken = getShareToken()
+    if (shareToken) {
+      const sidecarName = getSidecarFileName()
+      const publicUrl = `${baseUrl}/remote.php/dav/public-files/${shareToken}/${sidecarName}`
+      headers['Authorization'] = 'Basic ' + btoa(shareToken + ':')
+      try {
+        const res = await fetch(publicUrl, { method, headers, credentials: 'omit', body })
+        if (res.ok || res.status === 201 || res.status === 204) return res
+      } catch { /* fall through */ }
+    }
+
+    return null
+  }
+
+  // === Load / Save ===
+
+  async function loadFromRemote(): Promise<boolean> {
     const sidecarPath = getSidecarWebDavPath()
-    if (!sidecarPath) return false
+    // Try authenticated path first, then public share path
+    const res = await webdavRequest('GET', sidecarPath || '/nonexistent')
+    if (!res) return false
 
     try {
-      const url = `${window.location.origin}/remote.php/dav${sidecarPath}`
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: { 'Authorization': `Bearer ${token}` },
-        credentials: 'omit',
-      })
-
-      if (!response.ok) return false
-
-      const text = await response.text()
+      const text = await res.text()
       if (!text) return false
-
       const data = JSON.parse(text)
       comments.value = data.comments || []
       approval.value = data.approval || 'pending'
@@ -94,12 +149,9 @@ export function useComments(fileId: ComputedRef<string>, props: any) {
     }
   }
 
-  async function saveToSidecar() {
-    const token = getAuthToken()
-    if (!token) return
-
+  async function saveToRemote() {
     const sidecarPath = getSidecarWebDavPath()
-    if (!sidecarPath) return
+    if (!sidecarPath && !getShareToken()) return
 
     const data = {
       version: 1,
@@ -109,20 +161,7 @@ export function useComments(fileId: ComputedRef<string>, props: any) {
       updatedAt: new Date().toISOString(),
     }
 
-    try {
-      const url = `${window.location.origin}/remote.php/dav${sidecarPath}`
-      await fetch(url, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/octet-stream',
-          'Authorization': `Bearer ${token}`,
-        },
-        credentials: 'omit',
-        body: JSON.stringify(data, null, 2),
-      })
-    } catch {
-      console.warn('[VideoReview] Could not write sidecar file')
-    }
+    await webdavRequest('PUT', sidecarPath || '/placeholder', JSON.stringify(data, null, 2))
   }
 
   function saveToLocalStorage() {
@@ -135,25 +174,18 @@ export function useComments(fileId: ComputedRef<string>, props: any) {
         updatedAt: new Date().toISOString(),
       }
       localStorage.setItem(storageKey(), JSON.stringify(data))
-    } catch {
-      // Storage full or unavailable
-    }
+    } catch { /* Storage full or unavailable */ }
   }
 
   async function loadComments() {
-    // Try sidecar first (authenticated users), then localStorage
-    const fromSidecar = await loadFromSidecar()
-    if (!fromSidecar) {
-      loadFromLocalStorage()
-    }
+    const fromRemote = await loadFromRemote()
+    if (!fromRemote) loadFromLocalStorage()
     loaded = true
   }
 
   async function saveComments() {
-    // Always save to localStorage
     saveToLocalStorage()
-    // Also save sidecar for authenticated users
-    await saveToSidecar()
+    await saveToRemote()
   }
 
   function addCommentToStore(comment: ReviewComment) {
@@ -184,35 +216,26 @@ export function useComments(fileId: ComputedRef<string>, props: any) {
     }
   })
 
-  // Poll sidecar for real-time comment sync (every 5s)
+  // Poll for real-time comment sync (every 5s)
   let pollTimer: ReturnType<typeof setInterval> | null = null
 
   function startPolling() {
     if (pollTimer) return
     pollTimer = setInterval(async () => {
-      const token = getAuthToken()
-      if (!token) return
-
       const sidecarPath = getSidecarWebDavPath()
-      if (!sidecarPath) return
+      if (!sidecarPath && !getShareToken()) return
+
+      const res = await webdavRequest('GET', sidecarPath || '/nonexistent')
+      if (!res) return
 
       try {
-        const url = `${window.location.origin}/remote.php/dav${sidecarPath}`
-        const response = await fetch(url, {
-          method: 'GET',
-          headers: { 'Authorization': `Bearer ${token}` },
-          credentials: 'omit',
-        })
-        if (!response.ok) return
-
-        const text = await response.text()
+        const text = await res.text()
         if (!text) return
-
         const data = JSON.parse(text)
         const remote = data.comments || []
         const remoteApproval = data.approval || 'pending'
 
-        // Merge: add any comments we don't have locally
+        // Merge: add comments we don't have locally
         const localIds = new Set(comments.value.map(c => c.id))
         let changed = false
         for (const rc of remote) {
@@ -222,7 +245,7 @@ export function useComments(fileId: ComputedRef<string>, props: any) {
           }
         }
 
-        // Check for deletions: remove local comments not in remote (if remote has data)
+        // Remove local comments deleted remotely
         if (remote.length > 0) {
           const remoteIds = new Set(remote.map((c: any) => c.id))
           const before = comments.value.length
@@ -230,32 +253,24 @@ export function useComments(fileId: ComputedRef<string>, props: any) {
           if (comments.value.length !== before) changed = true
         }
 
-        // Update approval if changed remotely
         if (remoteApproval !== approval.value) {
           approval.value = remoteApproval
           changed = true
         }
 
-        // Save merged state to localStorage (suppress watcher save loop)
         if (changed) {
           saving = true
           saveToLocalStorage()
           saving = false
         }
-      } catch {
-        // Polling failure is silent
-      }
+      } catch { /* silent */ }
     }, 5000)
   }
 
   function stopPolling() {
-    if (pollTimer) {
-      clearInterval(pollTimer)
-      pollTimer = null
-    }
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
   }
 
-  // Auto-start polling, clean up on unmount
   startPolling()
   onUnmounted(stopPolling)
 
@@ -267,5 +282,7 @@ export function useComments(fileId: ComputedRef<string>, props: any) {
     addCommentToStore,
     removeComment,
     setApprovalStatus,
+    getAuthToken,
+    getShareToken,
   }
 }
