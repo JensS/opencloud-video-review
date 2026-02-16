@@ -8,7 +8,8 @@ import type { ReviewComment, ApprovalStatus } from '../types'
  * - GET  /reviews/{reviewId} → { comments, approval }
  * - PUT  /reviews/{reviewId} → save { comments, approval }
  *
- * The reviewId is passed via URL parameter ?reviewId=xxx
+ * The reviewId is derived from the file ID (hashed to URL-safe string)
+ * or passed via URL parameter ?reviewId=xxx
  * Fallback: localStorage (when no API available)
  */
 export function useComments(fileId: ComputedRef<string>, _props: any) {
@@ -18,19 +19,34 @@ export function useComments(fileId: ComputedRef<string>, _props: any) {
 
   const storageKey = () => `vr-comments-${fileId.value}`
 
-  // === Review API ===
+  // === Helpers ===
+
+  /** Convert arbitrary string to URL-safe ID (only [a-zA-Z0-9_-]) */
+  function hashId(input: string): string {
+    let h = 0
+    for (let i = 0; i < input.length; i++) {
+      h = ((h << 5) - h + input.charCodeAt(i)) | 0
+    }
+    const safe = input.replace(/[^a-zA-Z0-9]/g, '').slice(0, 20)
+    const hash = Math.abs(h).toString(36)
+    return `${safe}-${hash}`
+  }
+
+  /** Ensure a string is URL-safe for the review API */
+  function safeId(id: string): string {
+    if (!id || id === 'unknown') return ''
+    // If already safe, return as-is
+    if (/^[a-zA-Z0-9_-]{8,128}$/.test(id)) return id
+    // Otherwise hash it
+    return hashId(id)
+  }
 
   function getReviewApiBase(): string {
-    // Check for explicit config
     const meta = document.querySelector('meta[name="review-api"]')
     if (meta) return meta.getAttribute('content') || ''
-
-    // Default: same origin /review-api or configurable via URL param
     const params = new URLSearchParams(window.location.search)
     const apiUrl = params.get('reviewApi')
     if (apiUrl) return apiUrl
-
-    // Try well-known path on same origin
     return `${window.location.origin}/review-api`
   }
 
@@ -38,40 +54,24 @@ export function useComments(fileId: ComputedRef<string>, _props: any) {
     // From URL param (set by "Share for Review" button)
     const params = new URLSearchParams(window.location.search)
     const id = params.get('reviewId')
-    if (id) return id
+    if (id) return safeId(id)
 
-    // Fallback: derive a safe reviewId from fileId (may contain $, !, : etc.)
-    const raw = fileId.value || ''
-    if (!raw || raw === 'unknown') return ''
-    return hashId(raw)
+    // Derive from fileId
+    return safeId(fileId.value)
   }
 
-  // Convert arbitrary fileId to a URL-safe review ID
-  function hashId(input: string): string {
-    // Simple deterministic hash → base36 string
-    let h = 0
-    for (let i = 0; i < input.length; i++) {
-      h = ((h << 5) - h + input.charCodeAt(i)) | 0
-    }
-    // Use both hash and a sanitized prefix for readability
-    const safe = input.replace(/[^a-zA-Z0-9]/g, '').slice(0, 20)
-    const hash = Math.abs(h).toString(36)
-    return `${safe}-${hash}`
-  }
+  // === API ===
 
   async function loadFromApi(): Promise<boolean> {
     const reviewId = getReviewId()
-    if (!reviewId || reviewId === 'unknown') return false
+    if (!reviewId) return false
 
     const base = getReviewApiBase()
     if (!base) return false
 
     try {
-      const res = await fetch(`${base}/reviews/${encodeURIComponent(reviewId)}`, {
-        credentials: 'omit',
-      })
+      const res = await fetch(`${base}/reviews/${reviewId}`, { credentials: 'omit' })
       if (!res.ok) return false
-
       const data = await res.json()
       comments.value = data.comments || []
       approval.value = data.approval || 'pending'
@@ -83,13 +83,13 @@ export function useComments(fileId: ComputedRef<string>, _props: any) {
 
   async function saveToApi(): Promise<boolean> {
     const reviewId = getReviewId()
-    if (!reviewId || reviewId === 'unknown') return false
+    if (!reviewId) return false
 
     const base = getReviewApiBase()
     if (!base) return false
 
     try {
-      const res = await fetch(`${base}/reviews/${encodeURIComponent(reviewId)}`, {
+      const res = await fetch(`${base}/reviews/${reviewId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'omit',
@@ -128,7 +128,7 @@ export function useComments(fileId: ComputedRef<string>, _props: any) {
         approval: approval.value,
         updatedAt: new Date().toISOString(),
       }))
-    } catch { /* full or unavailable */ }
+    } catch {}
   }
 
   // === Public interface ===
@@ -179,15 +179,13 @@ export function useComments(fileId: ComputedRef<string>, _props: any) {
     if (pollTimer) return
     pollTimer = setInterval(async () => {
       const reviewId = getReviewId()
-      if (!reviewId || reviewId === 'unknown') return
+      if (!reviewId) return
 
       const base = getReviewApiBase()
       if (!base) return
 
       try {
-        const res = await fetch(`${base}/reviews/${encodeURIComponent(reviewId)}`, {
-          credentials: 'omit',
-        })
+        const res = await fetch(`${base}/reviews/${reviewId}`, { credentials: 'omit' })
         if (!res.ok) return
 
         const data = await res.json()
@@ -197,7 +195,6 @@ export function useComments(fileId: ComputedRef<string>, _props: any) {
         const localIds = new Set(comments.value.map(c => c.id))
         let changed = false
 
-        // Add new remote comments
         for (const rc of remote) {
           if (!localIds.has(rc.id)) {
             comments.value.push(rc)
@@ -205,7 +202,6 @@ export function useComments(fileId: ComputedRef<string>, _props: any) {
           }
         }
 
-        // Remove locally deleted comments
         if (remote.length > 0 || comments.value.length > 0) {
           const remoteIds = new Set(remote.map((c: any) => c.id))
           const before = comments.value.length
@@ -223,7 +219,7 @@ export function useComments(fileId: ComputedRef<string>, _props: any) {
           saveToLocalStorage()
           saving = false
         }
-      } catch { /* silent */ }
+      } catch {}
     }, 5000)
   }
 

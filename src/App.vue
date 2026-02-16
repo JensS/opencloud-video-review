@@ -3,11 +3,20 @@
     <!-- Video Player Area -->
     <div class="player-area">
       <div class="video-container" ref="videoContainer">
+        <!-- Loading spinner -->
+        <div v-if="videoLoading" class="video-loading">
+          <div class="spinner"></div>
+          <span>Loading video…</span>
+        </div>
         <video
           ref="videoEl"
           :src="videoUrl"
+          preload="metadata"
           @timeupdate="onTimeUpdate"
           @loadedmetadata="onMetadataLoaded"
+          @canplay="videoLoading = false"
+          @waiting="videoLoading = true"
+          @playing="videoLoading = false"
           @click="togglePlay"
           @dblclick="toggleFullscreen"
           crossorigin="anonymous"
@@ -243,6 +252,7 @@ const videoContainer = ref<HTMLDivElement | null>(null)
 const timelineEl = ref<HTMLDivElement | null>(null)
 const drawCanvas = ref<HTMLCanvasElement | null>(null)
 const playing = ref(false)
+const videoLoading = ref(true)
 const currentTime = ref(0)
 const duration = ref(0)
 const progress = ref(0)
