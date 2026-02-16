@@ -40,6 +40,7 @@ export default defineWebApplication({
       extension: ext,
       routeName: 'video-review',
       label: $gettext('Open in Video Review'),
+      hasPriority: true,
       ...(VIDEO_MIMETYPES[i] ? { mimeType: VIDEO_MIMETYPES[i] } : {})
     }))
 
