@@ -168,29 +168,28 @@
 
       <!-- Approval section -->
       <div class="approval-section">
-        <h3>Status</h3>
-        <div class="approval-buttons">
+        <div class="status-dropdown" ref="statusDropdownEl">
           <button
-            @click="setApproval('approved')"
-            class="approval-btn approved"
-            :class="{ active: approval === 'approved' }"
+            class="status-btn"
+            :class="'status-' + approval"
+            @click="statusDropdownOpen = !statusDropdownOpen"
           >
-            ✅ Approved
+            <span class="status-dot" />
+            <span class="status-label">{{ statusLabels[approval] }}</span>
+            <svg class="status-arrow" :class="{ open: statusDropdownOpen }" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
           </button>
-          <button
-            @click="setApproval('revisions')"
-            class="approval-btn revisions"
-            :class="{ active: approval === 'revisions' }"
-          >
-            🔄 Revisions Needed
-          </button>
-          <button
-            @click="setApproval('pending')"
-            class="approval-btn pending"
-            :class="{ active: approval === 'pending' }"
-          >
-            ⏳ Pending
-          </button>
+          <div v-if="statusDropdownOpen" class="status-options">
+            <button
+              v-for="opt in statusOptions"
+              :key="opt.value"
+              class="status-option"
+              :class="['status-' + opt.value, { selected: approval === opt.value }]"
+              @click="setApproval(opt.value); statusDropdownOpen = false"
+            >
+              <span class="status-dot" />
+              {{ opt.label }}
+            </button>
+          </div>
         </div>
       </div>
     </aside>
@@ -200,6 +199,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch, nextTick, readonly } from 'vue'
 import type { ReviewComment, ReviewData, ApprovalStatus } from './types'
+import { onClickOutside } from './utils/clickOutside'
 import { useComments } from './composables/useComments'
 import { generateEdl } from './utils/edl'
 import { formatTimecode, formatRelativeDate } from './utils/time'
@@ -258,6 +258,20 @@ const colorHex: Record<string, string> = {
   blue: '#3b82f6',
   purple: '#a855f7',
 }
+
+// Status dropdown
+const statusDropdownOpen = ref(false)
+const statusDropdownEl = ref<HTMLDivElement | null>(null)
+const statusLabels: Record<string, string> = {
+  pending: 'Pending',
+  approved: 'Approved',
+  revisions: 'Revisions Needed',
+}
+const statusOptions = [
+  { value: 'approved' as ApprovalStatus, label: 'Approved' },
+  { value: 'revisions' as ApprovalStatus, label: 'Revisions Needed' },
+  { value: 'pending' as ApprovalStatus, label: 'Pending' },
+]
 
 const newComment = ref({
   author: localStorage.getItem('vr-author') || '',
@@ -690,6 +704,9 @@ watch(() => newComment.value.color, (color) => {
 })
 
 // Lifecycle
+// Close status dropdown on outside click
+onClickOutside(statusDropdownEl, () => { statusDropdownOpen.value = false })
+
 onMounted(() => {
   document.addEventListener('keydown', onKeydown)
   isAuthenticated.value = !!getAuthToken()
