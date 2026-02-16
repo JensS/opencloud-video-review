@@ -433,8 +433,15 @@ function toggleDraw() {
         drawCanvas.value.height = videoEl.value.videoHeight || videoEl.value.clientHeight
         drawCtx = drawCanvas.value.getContext('2d')
         if (drawCtx) {
-          drawCtx.strokeStyle = '#ff3333'
-          drawCtx.lineWidth = 3
+          const colorMap: Record<string, string> = {
+            red: '#ef4444',
+            yellow: '#eab308',
+            green: '#22c55e',
+            blue: '#3b82f6',
+            purple: '#a855f7',
+          }
+          drawCtx.strokeStyle = colorMap[newComment.value.color] || '#ef4444'
+          drawCtx.lineWidth = 5
           drawCtx.lineCap = 'round'
           drawCtx.lineJoin = 'round'
         }
