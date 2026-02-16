@@ -546,9 +546,9 @@ async function shareForReview() {
     const reviewId = getReviewId() || fileId.value
     if (!reviewId || reviewId === 'unknown') throw new Error('No file ID available')
 
-    // First, create a public share link for viewing the video
+    // Create a public share link for the video
     const token = getAuthToken()
-    let shareUrl = ''
+    let shareToken = ''
 
     if (token) {
       const headers: Record<string, string> = {
@@ -562,7 +562,6 @@ async function shareForReview() {
         { headers, credentials: 'omit' }
       )
 
-      let shareToken = ''
       if (listRes.ok) {
         const listData = await listRes.json()
         const existing = listData?.ocs?.data?.[0]
@@ -590,16 +589,11 @@ async function shareForReview() {
           shareToken = createData?.ocs?.data?.token || ''
         }
       }
-
-      if (shareToken) {
-        shareUrl = `${baseUrl}/s/${shareToken}?reviewId=${encodeURIComponent(reviewId)}`
-      }
     }
 
-    // Build standalone review page URL
-    // The review-api serves a full review UI at /view/{reviewId}?share={shareToken}&name={fileName}
-    if (!shareUrl && shareToken) {
-      // Try well-known review-api path on same origin
+    // Build standalone review page URL (always preferred — works for guests without OC login)
+    let shareUrl = ''
+    if (shareToken) {
       const reviewApiBase = `${baseUrl}/review-api`
       shareUrl = `${reviewApiBase}/view/${encodeURIComponent(reviewId)}?share=${encodeURIComponent(shareToken)}&name=${encodeURIComponent(fileName.value)}`
     }
