@@ -181,7 +181,7 @@
   margin: 0 4px;
 
   &:hover {
-    .timeline-playhead { transform: translateX(-50%) scale(1.5); }
+    .timeline-playhead { width: 14px; height: 14px; }
   }
 }
 
@@ -202,11 +202,10 @@
   height: 12px;
   background: white;
   border-radius: 50%;
-  transform: translateX(-50%) translateY(-50%);
+  transform: translate(-50%, -50%);
   pointer-events: none;
   z-index: 2;
   box-shadow: 0 0 4px rgba(0, 0, 0, 0.5);
-  transition: transform 0.1s;
 }
 
 .timeline-marker {
