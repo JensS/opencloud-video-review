@@ -24,9 +24,9 @@
           @mouseleave="endDraw"
         />
 
-        <!-- Annotation marker on video -->
-        <div v-if="activeAnnotation && reviewMode" class="annotation-overlay">
-          <img :src="activeAnnotation" class="annotation-image" />
+        <!-- Annotation marker on video — shows drawings at their timestamp -->
+        <div v-if="currentDrawing && reviewMode" class="annotation-overlay">
+          <img :src="currentDrawing" class="annotation-image" />
         </div>
         <!-- Sidebar toggle arrow — right edge of video frame -->
         <button
@@ -167,7 +167,7 @@
             v-if="comment.drawing"
             :src="comment.drawing"
             class="comment-drawing"
-            @click.stop="showAnnotation(comment.drawing)"
+            @click.stop="jumpToComment(comment)"
           />
         </div>
 
@@ -249,7 +249,6 @@ const playbackRate = ref(1)
 const sidebarOpen = ref(true)
 const isDrawing = ref(false)
 const drawingDataUrl = ref('')
-const activeAnnotation = ref('')
 const activeCommentId = ref('')
 
 // Comment state
@@ -314,6 +313,18 @@ const { comments, approval, loadComments, addCommentToStore, removeComment, setA
 const sortedComments = computed(() =>
   [...comments.value].sort((a, b) => a.timestamp - b.timestamp)
 )
+
+// Show drawing annotations when playhead is within ±0.5s of their timestamp
+const currentDrawing = computed(() => {
+  if (!reviewMode.value) return ''
+  const t = currentTime.value
+  for (const c of comments.value) {
+    if (c.drawing && Math.abs(c.timestamp - t) < 0.5) {
+      return c.drawing
+    }
+  }
+  return ''
+})
 
 // Video controls
 function togglePlay() {
@@ -423,15 +434,6 @@ function jumpToComment(comment: ReviewComment) {
     playing.value = false
   }
   activeCommentId.value = comment.id
-  if (comment.drawing) {
-    activeAnnotation.value = comment.drawing
-    setTimeout(() => { activeAnnotation.value = '' }, 3000)
-  }
-}
-
-function showAnnotation(drawing: string) {
-  activeAnnotation.value = drawing
-  setTimeout(() => { activeAnnotation.value = '' }, 5000)
 }
 
 function setApproval(status: ApprovalStatus) {
