@@ -117,6 +117,7 @@
           </div>
         </div>
         <input
+          v-if="!isLoggedIn"
           v-model="newComment.author"
           placeholder="Your name"
           class="author-input"
@@ -282,8 +283,32 @@ const statusOptions = [
   { value: 'pending' as ApprovalStatus, label: 'Pending' },
 ]
 
+// Try to get username from OpenCloud context
+function getOcUsername(): string {
+  try {
+    for (const storage of [sessionStorage, localStorage]) {
+      for (let i = 0; i < storage.length; i++) {
+        const key = storage.key(i)
+        if (!key) continue
+        try {
+          const raw = storage.getItem(key) || ''
+          if (!raw.startsWith('{')) continue
+          const data = JSON.parse(raw)
+          // OIDC profile has preferred_username or name
+          if (data?.profile?.preferred_username) return data.profile.preferred_username
+          if (data?.profile?.name) return data.profile.name
+        } catch {}
+      }
+    }
+  } catch {}
+  return ''
+}
+
+const ocUsername = getOcUsername()
+const isLoggedIn = ref(!!ocUsername)
+
 const newComment = ref({
-  author: localStorage.getItem('vr-author') || '',
+  author: ocUsername || localStorage.getItem('vr-author') || '',
   text: '',
   color: 'yellow' as string,
 })
