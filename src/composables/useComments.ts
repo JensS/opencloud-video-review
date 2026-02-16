@@ -40,8 +40,23 @@ export function useComments(fileId: ComputedRef<string>, _props: any) {
     const id = params.get('reviewId')
     if (id) return id
 
-    // Fallback: use fileId as reviewId (for authenticated users)
-    return fileId.value || ''
+    // Fallback: derive a safe reviewId from fileId (may contain $, !, : etc.)
+    const raw = fileId.value || ''
+    if (!raw || raw === 'unknown') return ''
+    return hashId(raw)
+  }
+
+  // Convert arbitrary fileId to a URL-safe review ID
+  function hashId(input: string): string {
+    // Simple deterministic hash → base36 string
+    let h = 0
+    for (let i = 0; i < input.length; i++) {
+      h = ((h << 5) - h + input.charCodeAt(i)) | 0
+    }
+    // Use both hash and a sanitized prefix for readability
+    const safe = input.replace(/[^a-zA-Z0-9]/g, '').slice(0, 20)
+    const hash = Math.abs(h).toString(36)
+    return `${safe}-${hash}`
   }
 
   async function loadFromApi(): Promise<boolean> {

@@ -28,7 +28,7 @@ const server = http.createServer((req, res) => {
   }
 
   // Standalone review page: /view/{reviewId}
-  const viewMatch = url.pathname.match(/^\/view\/([a-zA-Z0-9_-]{8,64})$/)
+  const viewMatch = url.pathname.match(/^\/view\/([a-zA-Z0-9_-]{8,128})$/)
   if (viewMatch && req.method === 'GET') {
     const reviewId = viewMatch[1]
     const shareToken = url.searchParams.get('share') || ''
@@ -48,7 +48,7 @@ const server = http.createServer((req, res) => {
   }
 
   // API: /reviews/{reviewId}
-  const apiMatch = url.pathname.match(/^\/reviews\/([a-zA-Z0-9_-]{8,64})$/)
+  const apiMatch = url.pathname.match(/^\/reviews\/([a-zA-Z0-9_-]{8,128})$/)
   if (!apiMatch) {
     res.writeHead(404)
     res.end('Not found')
