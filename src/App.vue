@@ -489,62 +489,60 @@ async function shareForReview() {
     const resource = props.resource
     if (!resource) throw new Error('No resource')
 
-    const resourceId = resource.fileId || resource.id
-    if (!resourceId) throw new Error('No resource ID')
-
-    // Get auth token
     const token = getAuthToken()
     const baseUrl = window.location.origin
+    const filePath = resource.path || resource.webDavPath || ''
+    if (!filePath) throw new Error('No file path')
 
-    // Create a public link via OpenCloud Graph API
-    const driveId = resource.storageId || resource.parentFolderId?.split('!')[0] || ''
-    const itemId = resourceId
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    }
+    if (token) headers['Authorization'] = `Bearer ${token}`
 
-    // Use the sharing API to create a public link
-    const shareResponse = await fetch(`${baseUrl}/graph/v1.0/drives/${driveId}/items/${itemId}/createLink`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-      },
-      body: JSON.stringify({
-        type: 'view',
-        '@libre.graph.quickLink': false,
-      }),
-    })
+    // First check if a public link already exists for this file
+    const listRes = await fetch(
+      `${baseUrl}/ocs/v2.php/apps/files_sharing/api/v1/shares?format=json&path=${encodeURIComponent(filePath)}&share_types=3`,
+      { headers }
+    )
 
-    if (!shareResponse.ok) {
-      // Fallback: try the OCS sharing API
-      const ocsResponse = await fetch(`${baseUrl}/ocs/v2.php/apps/files_sharing/api/v1/shares?format=json`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-        },
-        body: new URLSearchParams({
-          path: resource.path || resource.webDavPath || '',
-          shareType: '3', // public link
-          permissions: '1', // read
-        }),
-      })
+    let shareToken = ''
 
-      if (!ocsResponse.ok) throw new Error('Could not create share link')
-      const ocsData = await ocsResponse.json()
-      const shareToken = ocsData?.ocs?.data?.token
-      if (!shareToken) throw new Error('No share token returned')
-
-      const reviewUrl = `${baseUrl}/s/${shareToken}?app=video-review`
-      await copyToClipboard(reviewUrl)
-    } else {
-      const data = await shareResponse.json()
-      const webUrl = data?.link?.webUrl
-      if (webUrl) {
-        const reviewUrl = `${webUrl}?app=video-review`
-        await copyToClipboard(reviewUrl)
-      } else {
-        throw new Error('No webUrl in response')
+    if (listRes.ok) {
+      const listData = await listRes.json()
+      const existing = listData?.ocs?.data?.[0]
+      if (existing?.token) {
+        shareToken = existing.token
       }
     }
+
+    // Create new share if none exists
+    if (!shareToken) {
+      const createRes = await fetch(
+        `${baseUrl}/ocs/v2.php/apps/files_sharing/api/v1/shares?format=json`,
+        {
+          method: 'POST',
+          headers,
+          body: new URLSearchParams({
+            path: filePath,
+            shareType: '3',
+            permissions: '1',
+            name: `Review: ${fileName.value}`,
+          }),
+        }
+      )
+
+      if (!createRes.ok) {
+        const errText = await createRes.text()
+        throw new Error(`Share API ${createRes.status}: ${errText}`)
+      }
+
+      const createData = await createRes.json()
+      shareToken = createData?.ocs?.data?.token
+      if (!shareToken) throw new Error('No share token returned')
+    }
+
+    const reviewUrl = `${baseUrl}/s/${shareToken}`
+    await copyToClipboard(reviewUrl)
 
     shareBtnLabel.value = 'Copied!'
     shareTooltip.value = 'Review link copied to clipboard'
@@ -562,12 +560,14 @@ async function shareForReview() {
 }
 
 function getAuthToken(): string {
-  // Try multiple storage locations for the access token
   try {
-    // OpenCloud stores tokens in sessionStorage/localStorage
+    // OpenCloud stores OIDC user data with access_token
     for (const storage of [sessionStorage, localStorage]) {
-      for (const key of Object.keys(storage)) {
-        if (key.includes('oidc') || key.includes('access_token')) {
+      for (let i = 0; i < storage.length; i++) {
+        const key = storage.key(i)
+        if (!key) continue
+        // Look for OIDC user entries (key pattern: oidc.user:...)
+        if (key.startsWith('oidc.user:') || key.includes('access_token')) {
           try {
             const data = JSON.parse(storage.getItem(key) || '')
             if (data?.access_token) return data.access_token
@@ -575,9 +575,7 @@ function getAuthToken(): string {
         }
       }
     }
-    // Direct token storage
-    return sessionStorage.getItem('oc_accessToken') ||
-      localStorage.getItem('oc_accessToken') || ''
+    return ''
   } catch {
     return ''
   }
