@@ -571,6 +571,14 @@ async function shareForReview() {
       }
     }
 
+    // Build standalone review page URL
+    // The review-api serves a full review UI at /view/{reviewId}?share={shareToken}&name={fileName}
+    if (!shareUrl && shareToken) {
+      // Try well-known review-api path on same origin
+      const reviewApiBase = `${baseUrl}/review-api`
+      shareUrl = `${reviewApiBase}/view/${encodeURIComponent(reviewId)}?share=${encodeURIComponent(shareToken)}&name=${encodeURIComponent(fileName.value)}`
+    }
+
     // Fallback: current URL with reviewId param
     if (!shareUrl) {
       const url = new URL(window.location.href)

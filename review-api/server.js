@@ -4,32 +4,58 @@ const path = require('path')
 
 const PORT = process.env.PORT || 3456
 const DATA_DIR = process.env.DATA_DIR || '/data'
+const OC_URL = process.env.OC_URL || '' // e.g. https://cloud.jenssage.com
 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true })
 
+// Load the standalone review page HTML
+const viewHtml = fs.readFileSync(path.join(__dirname, 'view.html'), 'utf8')
+
 const server = http.createServer((req, res) => {
-  // CORS — allow any origin (review links can be opened from anywhere)
+  // CORS
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'GET, PUT, OPTIONS')
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
   if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return }
 
+  const url = new URL(req.url, `http://${req.headers.host}`)
+
   // Health check
-  if (req.url === '/health') {
+  if (url.pathname === '/health') {
     res.setHeader('Content-Type', 'application/json')
     res.end('{"status":"ok"}')
     return
   }
 
-  // Route: /reviews/{reviewId}
-  const match = req.url.match(/^\/reviews\/([a-zA-Z0-9_-]{8,64})$/)
-  if (!match) {
+  // Standalone review page: /view/{reviewId}
+  const viewMatch = url.pathname.match(/^\/view\/([a-zA-Z0-9_-]{8,64})$/)
+  if (viewMatch && req.method === 'GET') {
+    const reviewId = viewMatch[1]
+    const shareToken = url.searchParams.get('share') || ''
+    const fileName = url.searchParams.get('name') || 'Video'
+
+    // Inject config into HTML
+    const html = viewHtml
+      .replace('__REVIEW_ID__', reviewId)
+      .replace('__SHARE_TOKEN__', shareToken)
+      .replace('__FILE_NAME__', fileName.replace(/'/g, "\\'"))
+      .replace('__OC_URL__', OC_URL)
+      .replace('__API_BASE__', `${url.protocol}//${url.host}`)
+
+    res.setHeader('Content-Type', 'text/html; charset=utf-8')
+    res.end(html)
+    return
+  }
+
+  // API: /reviews/{reviewId}
+  const apiMatch = url.pathname.match(/^\/reviews\/([a-zA-Z0-9_-]{8,64})$/)
+  if (!apiMatch) {
     res.writeHead(404)
     res.end('Not found')
     return
   }
 
-  const reviewId = match[1]
+  const reviewId = apiMatch[1]
   const file = path.join(DATA_DIR, `${reviewId}.json`)
 
   if (req.method === 'GET') {
@@ -38,7 +64,6 @@ const server = http.createServer((req, res) => {
       res.setHeader('Content-Type', 'application/json')
       res.end(data)
     } catch {
-      // No review data yet — return empty state
       res.setHeader('Content-Type', 'application/json')
       res.end(JSON.stringify({ comments: [], approval: 'pending' }))
     }
@@ -46,8 +71,7 @@ const server = http.createServer((req, res) => {
     let body = ''
     req.on('data', chunk => {
       body += chunk
-      // Limit body size to 1MB
-      if (body.length > 1_000_000) {
+      if (body.length > 2_000_000) {
         res.writeHead(413)
         res.end('Payload too large')
         req.destroy()
@@ -56,7 +80,6 @@ const server = http.createServer((req, res) => {
     req.on('end', () => {
       try {
         const parsed = JSON.parse(body)
-        // Validate structure
         if (!Array.isArray(parsed.comments)) throw new Error('Invalid format')
         fs.writeFileSync(file, JSON.stringify(parsed, null, 2))
         res.setHeader('Content-Type', 'application/json')

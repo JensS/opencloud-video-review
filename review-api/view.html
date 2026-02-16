@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Video Review — __FILE_NAME__</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #0a0a0a; --bg2: #141414; --bg3: #1a1a1a; --border: #262626;
+  --text: #e5e5e5; --text2: #a3a3a3; --text3: #525252;
+  --blue: #3b82f6; --green: #22c55e; --yellow: #eab308; --red: #ef4444; --purple: #a855f7;
+}
+body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; font-size: 14px; height: 100vh; overflow: hidden; }
+
+.app { display: flex; height: 100vh; }
+.app.sidebar-open .player-area { width: calc(100% - 360px); }
+.app.sidebar-open .sidebar { width: 360px; }
+
+/* Player */
+.player-area { flex: 1; display: flex; flex-direction: column; min-width: 0; position: relative; }
+.video-wrap { flex: 1; position: relative; display: flex; align-items: center; justify-content: center; background: #000; overflow: hidden; }
+.video-wrap video { max-width: 100%; max-height: 100%; cursor: pointer; }
+
+/* Drawing overlay */
+.draw-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; cursor: crosshair; z-index: 10; }
+.annotation-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; pointer-events: none; z-index: 5; }
+.annotation-overlay img { max-width: 100%; max-height: 100%; opacity: 0.7; }
+
+/* Sidebar toggle */
+.sidebar-toggle { position: absolute; right: 0; top: 50%; transform: translateY(-50%); z-index: 15; display: flex; align-items: center; justify-content: center; width: 24px; height: 56px; background: rgba(20,20,20,0.85); border: none; border-radius: 6px 0 0 6px; color: var(--text2); cursor: pointer; transition: all .15s; }
+.sidebar-toggle:hover { background: rgba(30,30,30,0.95); color: var(--text); width: 28px; }
+.toggle-badge { position: absolute; top: 4px; left: 2px; background: var(--blue); color: #fff; font-size: 9px; padding: 0 3px; border-radius: 6px; min-width: 12px; text-align: center; line-height: 14px; }
+
+/* Controls */
+.controls { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--bg2); border-top: 1px solid var(--border); flex-shrink: 0; }
+.ctrl-btn { background: none; border: none; color: var(--text); font-size: 16px; cursor: pointer; padding: 4px 8px; border-radius: 4px; display: flex; align-items: center; justify-content: center; }
+.ctrl-btn:hover { background: var(--border); }
+.ctrl-btn.active { background: var(--blue); color: #fff; }
+.timecode { font-size: 12px; color: var(--text2); white-space: nowrap; min-width: 140px; font-variant-numeric: tabular-nums; }
+
+/* Timeline */
+.timeline { flex: 1; height: 20px; background: var(--bg3); border-radius: 4px; position: relative; cursor: pointer; margin: 0 4px; }
+.timeline-progress { position: absolute; top: 0; left: 0; height: 100%; background: linear-gradient(90deg, #2563eb, var(--blue)); border-radius: 4px; pointer-events: none; }
+.timeline-head { position: absolute; top: 50%; width: 12px; height: 12px; background: #fff; border-radius: 50%; transform: translate(-50%, -50%); pointer-events: none; z-index: 2; box-shadow: 0 0 4px rgba(0,0,0,.5); }
+.timeline-marker { position: absolute; top: 0; width: 4px; height: 100%; border-radius: 2px; transform: translateX(-50%); cursor: pointer; z-index: 1; opacity: .9; }
+.timeline-marker:hover { opacity: 1; transform: translateX(-50%) scaleX(2); }
+
+.speed-select { background: var(--bg3); color: var(--text); border: 1px solid #333; border-radius: 4px; padding: 2px 4px; font-size: 12px; cursor: pointer; }
+
+/* Sidebar */
+.sidebar { width: 0; overflow: hidden; display: flex; flex-direction: column; background: var(--bg2); border-left: 1px solid var(--border); transition: width .2s; }
+.app.sidebar-open .sidebar { overflow-y: auto; }
+.sidebar-header { display: flex; align-items: center; justify-content: space-between; padding: 16px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.sidebar-header h2 { font-size: 16px; font-weight: 600; }
+
+/* Add comment */
+.add-comment { padding: 12px 16px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.comment-meta { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.comment-tc { font-size: 13px; color: var(--blue); cursor: pointer; font-variant-numeric: tabular-nums; }
+.color-picker { display: flex; gap: 4px; }
+.color-dot { width: 16px; height: 16px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; }
+.color-dot.selected { border-color: #fff; }
+
+.text-input { width: 100%; background: var(--bg3); border: 1px solid #333; color: var(--text); border-radius: 6px; padding: 8px 10px; font-size: 13px; }
+.text-input::placeholder { color: var(--text3); }
+.text-input:focus { outline: none; border-color: var(--blue); }
+.author-input { margin-bottom: 6px; }
+textarea.text-input { resize: none; }
+
+.comment-actions { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; }
+.comment-actions-left { display: flex; align-items: center; gap: 6px; }
+.draw-btn { padding: 4px 6px; }
+.drawing-label { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text2); }
+.clear-drawing { background: none; border: none; color: var(--text2); cursor: pointer; font-size: 12px; }
+.clear-drawing:hover { color: var(--red); }
+.submit-btn { background: #2563eb; color: #fff; border: none; padding: 6px 16px; border-radius: 6px; font-size: 13px; cursor: pointer; font-weight: 500; }
+.submit-btn:hover:not(:disabled) { background: #1d4ed8; }
+.submit-btn:disabled { opacity: .4; cursor: default; }
+
+/* Comment list */
+.comment-list { flex: 1; overflow-y: auto; padding: 8px 0; }
+.comment { padding: 10px 16px; cursor: pointer; border-left: 3px solid transparent; transition: background .15s; }
+.comment:hover { background: var(--bg3); }
+.comment.active { background: var(--bg3); border-left-color: var(--blue); }
+.comment-header { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.comment-author { font-size: 12px; font-weight: 500; color: #d4d4d4; }
+.comment-date { font-size: 11px; color: var(--text3); margin-left: auto; }
+.delete-btn { background: none; border: none; color: var(--text3); cursor: pointer; font-size: 12px; opacity: 0; padding: 0 4px; }
+.comment:hover .delete-btn { opacity: 1; }
+.delete-btn:hover { color: var(--red); }
+.comment-text { font-size: 13px; line-height: 1.5; color: #d4d4d4; }
+.comment-drawing { margin-top: 6px; max-width: 100%; max-height: 80px; border-radius: 4px; border: 1px solid #333; cursor: pointer; opacity: .8; }
+.comment-drawing:hover { opacity: 1; }
+.empty-state { padding: 40px 16px; text-align: center; color: var(--text3); }
+.empty-state .hint { font-size: 12px; }
+
+/* Status dropdown */
+.approval-section { padding: 12px 16px; border-top: 1px solid var(--border); flex-shrink: 0; }
+.status-dropdown { position: relative; }
+.status-btn { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid #333; background: var(--bg3); color: var(--text); font-size: 13px; font-weight: 500; cursor: pointer; transition: all .15s; }
+.status-btn:hover { border-color: var(--text3); }
+.status-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.status-label { flex: 1; text-align: left; }
+.status-arrow { flex-shrink: 0; transition: transform .2s; }
+.status-arrow.open { transform: rotate(180deg); }
+.status-btn.s-pending { border-color: rgba(59,130,246,.4); background: rgba(59,130,246,.08); }
+.status-btn.s-pending .status-dot { background: var(--blue); }
+.status-btn.s-approved { border-color: rgba(34,197,94,.4); background: rgba(34,197,94,.08); }
+.status-btn.s-approved .status-dot { background: var(--green); }
+.status-btn.s-revisions { border-color: rgba(234,179,8,.4); background: rgba(234,179,8,.08); }
+.status-btn.s-revisions .status-dot { background: var(--yellow); }
+.status-options { position: absolute; bottom: calc(100% + 4px); left: 0; right: 0; background: #1e1e1e; border: 1px solid #333; border-radius: 8px; overflow: hidden; z-index: 20; box-shadow: 0 -4px 16px rgba(0,0,0,.4); }
+.status-option { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 12px; border: none; background: transparent; color: var(--text2); font-size: 13px; cursor: pointer; }
+.status-option:hover { background: var(--border); color: var(--text); }
+.status-option.selected { color: var(--text); font-weight: 500; }
+.status-option .status-dot { width: 10px; height: 10px; border-radius: 50%; }
+.status-option.s-pending .status-dot { background: var(--blue); }
+.status-option.s-approved .status-dot { background: var(--green); }
+.status-option.s-revisions .status-dot { background: var(--yellow); }
+
+/* Responsive */
+@media (max-width: 768px) {
+  .app { flex-direction: column; }
+  .app.sidebar-open .player-area { width: 100%; height: 50%; }
+  .app.sidebar-open .sidebar { width: 100%; height: 50%; border-left: none; border-top: 1px solid var(--border); }
+}
+</style>
+</head>
+<body>
+<div id="app" class="app sidebar-open">
+  <div class="player-area">
+    <div class="video-wrap" id="videoWrap">
+      <video id="video" crossorigin="anonymous"></video>
+      <canvas id="drawCanvas" class="draw-overlay" style="display:none"></canvas>
+      <div id="annotationOverlay" class="annotation-overlay" style="display:none">
+        <img id="annotationImg" class="annotation-overlay" />
+      </div>
+      <button id="sidebarToggle" class="sidebar-toggle" title="Toggle comments">
+        <svg id="toggleChevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+        <span id="toggleBadge" class="toggle-badge" style="display:none"></span>
+      </button>
+    </div>
+    <div class="controls">
+      <button class="ctrl-btn" id="playBtn" title="Play">▶</button>
+      <button class="ctrl-btn" id="skipBack" title="Back 5s"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="19 20 9 12 19 4 19 20"/><line x1="5" y1="19" x2="5" y2="5"/></svg></button>
+      <button class="ctrl-btn" id="skipFwd" title="Forward 5s"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19"/></svg></button>
+      <span class="timecode" id="timecode">00:00:00:00 / 00:00:00:00</span>
+      <div class="timeline" id="timeline">
+        <div class="timeline-progress" id="timelineProgress"></div>
+        <div class="timeline-head" id="timelineHead"></div>
+        <div id="markers"></div>
+      </div>
+      <select class="speed-select" id="speedSelect">
+        <option value="0.25">0.25×</option>
+        <option value="0.5">0.5×</option>
+        <option value="1" selected>1×</option>
+        <option value="1.5">1.5×</option>
+        <option value="2">2×</option>
+      </select>
+    </div>
+  </div>
+
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <h2>Comments</h2>
+    </div>
+    <div class="add-comment">
+      <div class="comment-meta">
+        <span class="comment-tc" id="commentTC">00:00:00:00</span>
+        <div class="color-picker" id="colorPicker"></div>
+      </div>
+      <input class="text-input author-input" id="authorInput" placeholder="Your name" />
+      <textarea class="text-input" id="commentText" placeholder="Add a comment at this timestamp..." rows="3"></textarea>
+      <div class="comment-actions">
+        <div class="comment-actions-left">
+          <button class="ctrl-btn draw-btn" id="drawBtn" title="Draw annotation"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>
+          <span id="drawingLabel" class="drawing-label" style="display:none">📎 Drawing <button class="clear-drawing" id="clearDrawing">✕</button></span>
+        </div>
+        <button class="submit-btn" id="submitBtn" disabled>Add Comment</button>
+      </div>
+    </div>
+    <div class="comment-list" id="commentList">
+      <div class="empty-state" id="emptyState"><p>No comments yet.</p><p class="hint">Pause the video and add a comment to start your review.</p></div>
+    </div>
+    <div class="approval-section">
+      <div class="status-dropdown">
+        <button class="status-btn s-pending" id="statusBtn">
+          <span class="status-dot"></span>
+          <span class="status-label" id="statusLabel">Pending</span>
+          <svg class="status-arrow" id="statusArrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <div class="status-options" id="statusOptions" style="display:none"></div>
+      </div>
+    </div>
+  </aside>
+</div>
+
+<script>
+(function() {
+  // Config injected by server
+  const CONFIG = {
+    reviewId: '__REVIEW_ID__',
+    shareToken: '__SHARE_TOKEN__',
+    fileName: '__FILE_NAME__',
+    ocUrl: '__OC_URL__',
+    apiBase: '__API_BASE__',
+  }
+
+  // === State ===
+  let comments = []
+  let approval = 'pending'
+  let sidebarOpen = true
+  let isDrawing = false
+  let drawingDataUrl = ''
+  let selectedColor = 'yellow'
+  let drawCtx = null
+  let mouseDown = false
+  let activeCommentId = ''
+
+  const colors = [
+    { value: 'red', hex: '#ef4444', label: 'Issue' },
+    { value: 'yellow', hex: '#eab308', label: 'Note' },
+    { value: 'green', hex: '#22c55e', label: 'Approved' },
+    { value: 'blue', hex: '#3b82f6', label: 'Suggestion' },
+    { value: 'purple', hex: '#a855f7', label: 'Creative' },
+  ]
+  const statusLabels = { pending: 'Pending', approved: 'Approved', revisions: 'Revisions Needed' }
+  const statusList = ['approved', 'revisions', 'pending']
+
+  // === Elements ===
+  const $ = id => document.getElementById(id)
+  const video = $('video')
+  const app = $('app')
+
+  // === Video source ===
+  // Public share download: OC_URL/s/{token}/download
+  if (CONFIG.shareToken && CONFIG.ocUrl) {
+    video.src = `${CONFIG.ocUrl}/s/${CONFIG.shareToken}/download`
+  }
+
+  // === Timecode ===
+  function tc(s) {
+    if (!s || !isFinite(s)) return '00:00:00:00'
+    const h = Math.floor(s / 3600)
+    const m = Math.floor((s % 3600) / 60)
+    const sec = Math.floor(s % 60)
+    const f = Math.floor((s % 1) * 24)
+    return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}:${String(f).padStart(2,'0')}`
+  }
+
+  function relDate(iso) {
+    if (!iso) return ''
+    const d = new Date(iso)
+    const diff = (Date.now() - d.getTime()) / 1000
+    if (diff < 60) return 'just now'
+    if (diff < 3600) return `${Math.floor(diff/60)}m ago`
+    if (diff < 86400) return `${Math.floor(diff/3600)}h ago`
+    return d.toLocaleDateString()
+  }
+
+  // === API ===
+  const apiUrl = `${CONFIG.apiBase}/reviews/${CONFIG.reviewId}`
+
+  async function loadComments() {
+    try {
+      const res = await fetch(apiUrl, { credentials: 'omit' })
+      if (res.ok) {
+        const data = await res.json()
+        comments = data.comments || []
+        approval = data.approval || 'pending'
+      }
+    } catch {}
+    render()
+  }
+
+  async function saveComments() {
+    try {
+      await fetch(apiUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'omit',
+        body: JSON.stringify({ comments, approval, updatedAt: new Date().toISOString() }),
+      })
+    } catch {}
+  }
+
+  // === Render ===
+  function render() {
+    renderComments()
+    renderMarkers()
+    renderStatus()
+    $('emptyState').style.display = comments.length ? 'none' : 'block'
+    $('toggleBadge').style.display = (!sidebarOpen && comments.length) ? '' : 'none'
+    $('toggleBadge').textContent = comments.length
+  }
+
+  function renderComments() {
+    const list = $('commentList')
+    const sorted = [...comments].sort((a, b) => a.timestamp - b.timestamp)
+    // Keep empty state, clear the rest
+    const items = list.querySelectorAll('.comment')
+    items.forEach(el => el.remove())
+
+    for (const c of sorted) {
+      const div = document.createElement('div')
+      div.className = 'comment' + (c.id === activeCommentId ? ' active' : '')
+      div.innerHTML = `
+        <div class="comment-header">
+          <span class="comment-tc" style="font-size:12px;font-weight:600;color:${colorHex(c.color)}">${tc(c.timestamp)}</span>
+          <span class="comment-author">${esc(c.author)}</span>
+          <span class="comment-date">${relDate(c.createdAt)}</span>
+          <button class="delete-btn" data-id="${c.id}" title="Delete">✕</button>
+        </div>
+        <p class="comment-text">${esc(c.text)}</p>
+        ${c.drawing ? `<img class="comment-drawing" src="${c.drawing}" data-ts="${c.timestamp}" />` : ''}
+      `
+      div.addEventListener('click', () => jumpTo(c))
+      const delBtn = div.querySelector('.delete-btn')
+      delBtn.addEventListener('click', e => { e.stopPropagation(); deleteComment(c.id) })
+      list.insertBefore(div, $('emptyState'))
+    }
+  }
+
+  function renderMarkers() {
+    const container = $('markers')
+    container.innerHTML = ''
+    const dur = video.duration || 1
+    for (const c of comments) {
+      const m = document.createElement('div')
+      m.className = 'timeline-marker'
+      m.style.left = `${(c.timestamp / dur) * 100}%`
+      m.style.background = colorHex(c.color)
+      m.title = `${c.author}: ${c.text}`
+      m.addEventListener('click', e => { e.stopPropagation(); jumpTo(c) })
+      container.appendChild(m)
+    }
+  }
+
+  function renderStatus() {
+    const btn = $('statusBtn')
+    btn.className = `status-btn s-${approval}`
+    $('statusLabel').textContent = statusLabels[approval] || 'Pending'
+  }
+
+  function colorHex(name) {
+    return (colors.find(c => c.value === name) || colors[1]).hex
+  }
+
+  function esc(s) {
+    const d = document.createElement('div')
+    d.textContent = s
+    return d.innerHTML
+  }
+
+  // === Actions ===
+  function jumpTo(c) {
+    video.currentTime = c.timestamp
+    video.pause()
+    activeCommentId = c.id
+    render()
+  }
+
+  function deleteComment(id) {
+    comments = comments.filter(c => c.id !== id)
+    saveComments()
+    render()
+  }
+
+  function addComment() {
+    const text = $('commentText').value.trim()
+    if (!text) return
+    const author = $('authorInput').value || 'Anonymous'
+    comments.push({
+      id: crypto.randomUUID(),
+      timestamp: video.currentTime,
+      text,
+      author,
+      color: selectedColor,
+      drawing: drawingDataUrl || undefined,
+      createdAt: new Date().toISOString(),
+    })
+    localStorage.setItem('vr-author', author)
+    $('commentText').value = ''
+    drawingDataUrl = ''
+    $('drawingLabel').style.display = 'none'
+    saveComments()
+    render()
+  }
+
+  // === Drawing ===
+  function toggleDraw() {
+    const canvas = $('drawCanvas')
+    isDrawing = !isDrawing
+    if (isDrawing) {
+      video.pause()
+      canvas.style.display = 'block'
+      canvas.width = video.videoWidth || video.clientWidth
+      canvas.height = video.videoHeight || video.clientHeight
+      drawCtx = canvas.getContext('2d')
+      drawCtx.strokeStyle = colorHex(selectedColor)
+      drawCtx.lineWidth = 5
+      drawCtx.lineCap = 'round'
+      drawCtx.lineJoin = 'round'
+      $('drawBtn').classList.add('active')
+    } else {
+      drawingDataUrl = canvas.toDataURL('image/png')
+      canvas.style.display = 'none'
+      $('drawBtn').classList.remove('active')
+      $('drawingLabel').style.display = drawingDataUrl ? 'flex' : 'none'
+    }
+  }
+
+  // === Drawing annotation display ===
+  function updateAnnotation() {
+    const t = video.currentTime
+    let found = ''
+    for (const c of comments) {
+      if (c.drawing && Math.abs(c.timestamp - t) < 0.5) { found = c.drawing; break }
+    }
+    const overlay = $('annotationOverlay')
+    if (found) {
+      $('annotationImg').src = found
+      overlay.style.display = 'flex'
+    } else {
+      overlay.style.display = 'none'
+    }
+  }
+
+  // === Init UI ===
+  // Color picker
+  const picker = $('colorPicker')
+  for (const c of colors) {
+    const dot = document.createElement('button')
+    dot.className = `color-dot${c.value === selectedColor ? ' selected' : ''}`
+    dot.style.background = c.hex
+    dot.title = c.label
+    dot.addEventListener('click', () => {
+      selectedColor = c.value
+      picker.querySelectorAll('.color-dot').forEach(d => d.classList.remove('selected'))
+      dot.classList.add('selected')
+      if (drawCtx && isDrawing) drawCtx.strokeStyle = c.hex
+    })
+    picker.appendChild(dot)
+  }
+
+  // Status dropdown
+  const opts = $('statusOptions')
+  for (const s of statusList) {
+    const btn = document.createElement('button')
+    btn.className = `status-option s-${s}`
+    btn.innerHTML = `<span class="status-dot"></span> ${statusLabels[s]}`
+    btn.addEventListener('click', () => {
+      approval = s
+      opts.style.display = 'none'
+      $('statusArrow').classList.remove('open')
+      saveComments()
+      render()
+    })
+    opts.appendChild(btn)
+  }
+
+  // === Event listeners ===
+  // Video
+  video.addEventListener('timeupdate', () => {
+    const t = video.currentTime
+    const d = video.duration || 1
+    const pct = (t / d) * 100
+    $('timelineProgress').style.width = `${pct}%`
+    $('timelineHead').style.left = `${pct}%`
+    $('timecode').textContent = `${tc(t)} / ${tc(d)}`
+    $('commentTC').textContent = tc(t)
+    updateAnnotation()
+  })
+
+  video.addEventListener('click', () => video.paused ? video.play() : video.pause())
+  video.addEventListener('play', () => $('playBtn').innerHTML = '⏸')
+  video.addEventListener('pause', () => $('playBtn').innerHTML = '▶')
+  video.addEventListener('dblclick', () => {
+    document.fullscreenElement ? document.exitFullscreen() : $('videoWrap').requestFullscreen()
+  })
+
+  $('playBtn').addEventListener('click', () => video.paused ? video.play() : video.pause())
+  $('skipBack').addEventListener('click', () => video.currentTime = Math.max(0, video.currentTime - 5))
+  $('skipFwd').addEventListener('click', () => video.currentTime = Math.min(video.duration, video.currentTime + 5))
+  $('speedSelect').addEventListener('change', e => video.playbackRate = parseFloat(e.target.value))
+
+  // Timeline seek
+  $('timeline').addEventListener('click', e => {
+    const rect = $('timeline').getBoundingClientRect()
+    video.currentTime = ((e.clientX - rect.left) / rect.width) * video.duration
+  })
+
+  // Sidebar toggle
+  $('sidebarToggle').addEventListener('click', () => {
+    sidebarOpen = !sidebarOpen
+    app.classList.toggle('sidebar-open', sidebarOpen)
+    $('toggleChevron').innerHTML = sidebarOpen
+      ? '<polyline points="9 18 15 12 9 6"/>'
+      : '<polyline points="15 18 9 12 15 6"/>'
+    render()
+  })
+
+  // Comment submit
+  $('submitBtn').addEventListener('click', addComment)
+  $('commentText').addEventListener('input', () => {
+    $('submitBtn').disabled = !$('commentText').value.trim()
+  })
+  $('commentText').addEventListener('keydown', e => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') addComment()
+  })
+
+  // Drawing
+  $('drawBtn').addEventListener('click', toggleDraw)
+  $('clearDrawing').addEventListener('click', () => { drawingDataUrl = ''; $('drawingLabel').style.display = 'none' })
+
+  const canvas = $('drawCanvas')
+  canvas.addEventListener('mousedown', e => {
+    if (!drawCtx) return; mouseDown = true
+    const r = canvas.getBoundingClientRect()
+    drawCtx.beginPath()
+    drawCtx.moveTo((e.clientX-r.left)*(canvas.width/r.width), (e.clientY-r.top)*(canvas.height/r.height))
+  })
+  canvas.addEventListener('mousemove', e => {
+    if (!mouseDown || !drawCtx) return
+    const r = canvas.getBoundingClientRect()
+    drawCtx.lineTo((e.clientX-r.left)*(canvas.width/r.width), (e.clientY-r.top)*(canvas.height/r.height))
+    drawCtx.stroke()
+  })
+  canvas.addEventListener('mouseup', () => mouseDown = false)
+  canvas.addEventListener('mouseleave', () => mouseDown = false)
+
+  // Status
+  $('statusBtn').addEventListener('click', () => {
+    const show = opts.style.display === 'none'
+    opts.style.display = show ? '' : 'none'
+    $('statusArrow').classList.toggle('open', show)
+  })
+  document.addEventListener('click', e => {
+    if (!e.target.closest('.status-dropdown')) { opts.style.display = 'none'; $('statusArrow').classList.remove('open') }
+  })
+
+  // Keyboard
+  document.addEventListener('keydown', e => {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return
+    switch (e.key) {
+      case ' ': e.preventDefault(); video.paused ? video.play() : video.pause(); break
+      case 'ArrowLeft': e.preventDefault(); video.currentTime -= e.shiftKey ? 1 : 1/24; break
+      case 'ArrowRight': e.preventDefault(); video.currentTime += e.shiftKey ? 1 : 1/24; break
+      case 'j': video.currentTime -= 5; break
+      case 'l': video.currentTime += 5; break
+      case 'k': video.paused ? video.play() : video.pause(); break
+    }
+  })
+
+  // Author from localStorage
+  $('authorInput').value = localStorage.getItem('vr-author') || ''
+
+  // === Load & poll ===
+  loadComments()
+  setInterval(async () => {
+    try {
+      const res = await fetch(apiUrl, { credentials: 'omit' })
+      if (!res.ok) return
+      const data = await res.json()
+      const remote = data.comments || []
+      const localIds = new Set(comments.map(c => c.id))
+      let changed = false
+      for (const rc of remote) { if (!localIds.has(rc.id)) { comments.push(rc); changed = true } }
+      if (remote.length > 0) {
+        const remoteIds = new Set(remote.map(c => c.id))
+        const before = comments.length
+        comments = comments.filter(c => remoteIds.has(c.id))
+        if (comments.length !== before) changed = true
+      }
+      if (data.approval !== approval) { approval = data.approval; changed = true }
+      if (changed) render()
+    } catch {}
+  }, 5000)
+})()
+</script>
+</body>
+</html>
