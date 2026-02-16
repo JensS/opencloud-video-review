@@ -1,77 +1,103 @@
-import { ref, type Ref, type ComputedRef, watch } from 'vue'
+import { ref, type ComputedRef, watch } from 'vue'
 import type { ReviewComment, ApprovalStatus } from '../types'
 
 /**
  * Comments storage composable.
  *
  * Storage strategy (in priority order):
- * 1. Sidecar JSON file via WebDAV (if authenticated with write access)
- * 2. LocalStorage fallback (for public links or read-only access)
+ * 1. Sidecar JSON file via WebDAV fetch (if authenticated)
+ * 2. LocalStorage fallback (always, for guests and as backup)
  *
  * The sidecar file is stored next to the video as `<filename>.review.json`.
  */
 export function useComments(fileId: ComputedRef<string>, props: any) {
   const comments = ref<ReviewComment[]>([])
   const approval = ref<ApprovalStatus>('pending')
-  const canWriteRemote = ref(false)
   let loaded = false
 
   const storageKey = () => `vr-comments-${fileId.value}`
 
-  // Try to detect the WebDAV path for sidecar file
-  function getSidecarUrl(): string | null {
+  function getAuthToken(): string {
+    try {
+      for (const storage of [sessionStorage, localStorage]) {
+        for (let i = 0; i < storage.length; i++) {
+          const key = storage.key(i)
+          if (!key) continue
+          if (key.startsWith('oidc.user:')) {
+            try {
+              const data = JSON.parse(storage.getItem(key) || '')
+              if (data?.access_token) return data.access_token
+            } catch { /* not JSON */ }
+          }
+        }
+      }
+      return ''
+    } catch {
+      return ''
+    }
+  }
+
+  function getSidecarWebDavPath(): string | null {
     try {
       const resource = props.resource
       if (!resource) return null
-
-      // Build sidecar path from resource's WebDAV path
       const webDavPath = resource.webDavPath || resource.path
       if (!webDavPath) return null
-
       return `${webDavPath}.review.json`
     } catch {
       return null
     }
   }
 
-  async function loadComments() {
-    // Try sidecar file first
-    const sidecarUrl = getSidecarUrl()
-    if (sidecarUrl) {
-      try {
-        const client = (props as any).clientService?.webdav
-        if (client) {
-          const response = await client.getFileContents(sidecarUrl, { format: 'text' })
-          if (response) {
-            const data = JSON.parse(response as string)
-            comments.value = data.comments || []
-            approval.value = data.approval || 'pending'
-            canWriteRemote.value = true
-            loaded = true
-            return
-          }
-        }
-      } catch {
-        // Sidecar doesn't exist yet or no access — fall through
-      }
-    }
+  async function loadFromSidecar(): Promise<boolean> {
+    const token = getAuthToken()
+    if (!token) return false
 
-    // Fallback: localStorage
+    const sidecarPath = getSidecarWebDavPath()
+    if (!sidecarPath) return false
+
     try {
-      const stored = localStorage.getItem(storageKey())
-      if (stored) {
-        const data = JSON.parse(stored)
-        comments.value = data.comments || []
-        approval.value = data.approval || 'pending'
-      }
-    } catch {
-      // ignore
-    }
+      const url = `${window.location.origin}/remote.php/dav${sidecarPath}`
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: { 'Authorization': `Bearer ${token}` },
+        credentials: 'omit',
+      })
 
-    loaded = true
+      if (!response.ok) return false
+
+      const text = await response.text()
+      if (!text) return false
+
+      const data = JSON.parse(text)
+      comments.value = data.comments || []
+      approval.value = data.approval || 'pending'
+      return true
+    } catch {
+      return false
+    }
   }
 
-  async function saveComments() {
+  function loadFromLocalStorage(): boolean {
+    try {
+      const stored = localStorage.getItem(storageKey())
+      if (!stored) return false
+      const data = JSON.parse(stored)
+      comments.value = data.comments || []
+      approval.value = data.approval || 'pending'
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  async function saveToSidecar() {
+    const token = getAuthToken()
+    if (!token) return
+
+    const sidecarPath = getSidecarWebDavPath()
+    if (!sidecarPath) return
+
     const data = {
       version: 1,
       fileId: fileId.value,
@@ -80,31 +106,51 @@ export function useComments(fileId: ComputedRef<string>, props: any) {
       updatedAt: new Date().toISOString(),
     }
 
-    // Always save to localStorage as backup
     try {
+      const url = `${window.location.origin}/remote.php/dav${sidecarPath}`
+      await fetch(url, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/octet-stream',
+          'Authorization': `Bearer ${token}`,
+        },
+        credentials: 'omit',
+        body: JSON.stringify(data, null, 2),
+      })
+    } catch {
+      console.warn('[VideoReview] Could not write sidecar file')
+    }
+  }
+
+  function saveToLocalStorage() {
+    try {
+      const data = {
+        version: 1,
+        fileId: fileId.value,
+        approval: approval.value,
+        comments: comments.value,
+        updatedAt: new Date().toISOString(),
+      }
       localStorage.setItem(storageKey(), JSON.stringify(data))
     } catch {
       // Storage full or unavailable
     }
+  }
 
-    // Try to save sidecar file
-    if (canWriteRemote.value) {
-      const sidecarUrl = getSidecarUrl()
-      if (sidecarUrl) {
-        try {
-          const client = (props as any).clientService?.webdav
-          if (client) {
-            await client.putFileContents(sidecarUrl, JSON.stringify(data, null, 2), {
-              contentLength: false,
-              overwrite: true,
-            })
-          }
-        } catch {
-          // Write failed — localStorage is our backup
-          console.warn('[VideoReview] Could not write sidecar file, using localStorage')
-        }
-      }
+  async function loadComments() {
+    // Try sidecar first (authenticated users), then localStorage
+    const fromSidecar = await loadFromSidecar()
+    if (!fromSidecar) {
+      loadFromLocalStorage()
     }
+    loaded = true
+  }
+
+  async function saveComments() {
+    // Always save to localStorage
+    saveToLocalStorage()
+    // Also save sidecar for authenticated users
+    await saveToSidecar()
   }
 
   function addCommentToStore(comment: ReviewComment) {
@@ -137,7 +183,6 @@ export function useComments(fileId: ComputedRef<string>, props: any) {
   return {
     comments,
     approval,
-    canWriteRemote,
     loadComments,
     saveComments,
     addCommentToStore,

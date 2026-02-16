@@ -288,7 +288,7 @@ const fileName = computed(() => {
 })
 
 // Comments management
-const { comments, approval, loadComments, saveComments, addCommentToStore, removeComment, setApprovalStatus } = useComments(fileId, props)
+const { comments, approval, loadComments, addCommentToStore, removeComment, setApprovalStatus } = useComments(fileId, props)
 
 const sortedComments = computed(() =>
   [...comments.value].sort((a, b) => a.timestamp - b.timestamp)
@@ -506,7 +506,7 @@ async function shareForReview() {
     // First check if a public link already exists for this file
     const listRes = await fetch(
       `${baseUrl}/ocs/v2.php/apps/files_sharing/api/v1/shares?format=json&path=${encodeURIComponent(filePath)}&share_types=3`,
-      { headers }
+      { headers, credentials: 'omit' }
     )
 
     let shareToken = ''
@@ -526,6 +526,7 @@ async function shareForReview() {
         {
           method: 'POST',
           headers,
+          credentials: 'omit',
           body: new URLSearchParams({
             path: filePath,
             shareType: '3',
@@ -569,13 +570,13 @@ async function shareForReview() {
 
 function getAuthToken(): string {
   try {
-    // OpenCloud stores OIDC user data with access_token
+    // OpenCloud stores OIDC user data with key pattern: oidc.user:...
+    // Only match this pattern to avoid picking up share tokens or other data
     for (const storage of [sessionStorage, localStorage]) {
       for (let i = 0; i < storage.length; i++) {
         const key = storage.key(i)
         if (!key) continue
-        // Look for OIDC user entries (key pattern: oidc.user:...)
-        if (key.startsWith('oidc.user:') || key.includes('access_token')) {
+        if (key.startsWith('oidc.user:')) {
           try {
             const data = JSON.parse(storage.getItem(key) || '')
             if (data?.access_token) return data.access_token
@@ -671,6 +672,7 @@ async function putWebDavFile(path: string, content: string) {
       'Content-Type': 'application/octet-stream',
       'Authorization': `Bearer ${token}`,
     },
+    credentials: 'omit',
     body: content,
   })
 
