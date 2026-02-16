@@ -1,5 +1,5 @@
 <template>
-  <div class="video-review" :class="{ 'sidebar-open': sidebarOpen }">
+  <div class="video-review" :class="{ 'sidebar-open': sidebarOpen && reviewMode }">
     <!-- Video Player Area -->
     <div class="player-area">
       <div class="video-container" ref="videoContainer">
@@ -15,7 +15,7 @@
 
         <!-- Drawing overlay -->
         <canvas
-          v-if="isDrawing"
+          v-if="isDrawing && reviewMode"
           ref="drawCanvas"
           class="draw-overlay"
           @mousedown="startDraw"
@@ -25,7 +25,7 @@
         />
 
         <!-- Annotation marker on video -->
-        <div v-if="activeAnnotation" class="annotation-overlay">
+        <div v-if="activeAnnotation && reviewMode" class="annotation-overlay">
           <img :src="activeAnnotation" class="annotation-image" />
         </div>
       </div>
@@ -47,7 +47,7 @@
           <div class="timeline-progress" :style="{ width: progress + '%' }" />
           <div class="timeline-playhead" :style="{ left: progress + '%' }" />
           <div
-            v-for="comment in comments"
+            v-for="comment in (reviewMode ? comments : [])"
             :key="comment.id"
             class="timeline-marker"
             :class="'color-' + comment.color"
@@ -57,12 +57,16 @@
           />
         </div>
 
-        <button class="ctrl-btn" @click="toggleDraw" :class="{ active: isDrawing }" title="Draw on frame">
+        <button v-if="reviewMode" class="ctrl-btn" @click="toggleDraw" :class="{ active: isDrawing }" title="Draw on frame">
           ✏️
         </button>
 
-        <button class="ctrl-btn" @click="sidebarOpen = !sidebarOpen" title="Toggle comments">
+        <button v-if="reviewMode" class="ctrl-btn" @click="sidebarOpen = !sidebarOpen" title="Toggle comments">
           💬 <span class="badge" v-if="comments.length">{{ comments.length }}</span>
+        </button>
+
+        <button class="ctrl-btn review-toggle" :class="{ active: reviewMode }" @click="toggleReviewMode" :title="reviewMode ? 'Disable review mode' : 'Enable review mode'">
+          {{ reviewMode ? '📝' : '▶️' }}
         </button>
 
         <select v-model="playbackRate" @change="setPlaybackRate" class="speed-select" title="Playback speed">
@@ -76,7 +80,7 @@
     </div>
 
     <!-- Comments Sidebar -->
-    <aside class="sidebar" v-if="sidebarOpen">
+    <aside class="sidebar" v-if="sidebarOpen && reviewMode">
       <div class="sidebar-header">
         <h2>Comments</h2>
         <div class="sidebar-actions">
@@ -194,7 +198,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, nextTick, readonly } from 'vue'
 import type { ReviewComment, ReviewData, ApprovalStatus } from './types'
 import { useComments } from './composables/useComments'
 import { generateEdl } from './utils/edl'
@@ -206,6 +210,21 @@ const props = defineProps<{
   space?: any
   currentFileContext?: any
 }>()
+
+// Review mode — enabled by default, can be toggled or set via URL ?review=false
+const reviewModeDefault = (() => {
+  try {
+    const params = new URLSearchParams(window.location.search)
+    const val = params.get('review')
+    if (val === 'false' || val === '0') return false
+    return true
+  } catch { return true }
+})()
+const reviewMode = ref(reviewModeDefault)
+
+function toggleReviewMode() {
+  reviewMode.value = !reviewMode.value
+}
 
 // Video state
 const videoEl = ref<HTMLVideoElement | null>(null)
