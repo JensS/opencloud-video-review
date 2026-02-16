@@ -251,6 +251,14 @@ const colors = [
   { value: 'purple', label: 'Purple — Creative' },
 ]
 
+const colorHex: Record<string, string> = {
+  red: '#ef4444',
+  yellow: '#eab308',
+  green: '#22c55e',
+  blue: '#3b82f6',
+  purple: '#a855f7',
+}
+
 const newComment = ref({
   author: localStorage.getItem('vr-author') || '',
   text: '',
@@ -433,14 +441,7 @@ function toggleDraw() {
         drawCanvas.value.height = videoEl.value.videoHeight || videoEl.value.clientHeight
         drawCtx = drawCanvas.value.getContext('2d')
         if (drawCtx) {
-          const colorMap: Record<string, string> = {
-            red: '#ef4444',
-            yellow: '#eab308',
-            green: '#22c55e',
-            blue: '#3b82f6',
-            purple: '#a855f7',
-          }
-          drawCtx.strokeStyle = colorMap[newComment.value.color] || '#ef4444'
+          drawCtx.strokeStyle = colorHex[newComment.value.color] || '#ef4444'
           drawCtx.lineWidth = 5
           drawCtx.lineCap = 'round'
           drawCtx.lineJoin = 'round'
@@ -647,9 +648,13 @@ async function doAutoSave() {
 }
 
 async function putWebDavFile(path: string, content: string) {
-  // Use fetch with the current auth token to PUT via WebDAV
-  const token = sessionStorage.getItem('oc_accessToken') ||
-    localStorage.getItem('oc_accessToken') || ''
+  const token = getAuthToken()
+  // Skip WebDAV calls entirely when not authenticated (prevents Basic Auth popup)
+  if (!token) {
+    console.info('[VideoReview] No auth token — skipping WebDAV save (guest mode)')
+    return
+  }
+
   const baseUrl = window.location.origin
   const url = `${baseUrl}/remote.php/dav${path}`
 
@@ -657,7 +662,7 @@ async function putWebDavFile(path: string, content: string) {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/octet-stream',
-      ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+      'Authorization': `Bearer ${token}`,
     },
     body: content,
   })
@@ -666,6 +671,13 @@ async function putWebDavFile(path: string, content: string) {
     throw new Error(`WebDAV PUT failed: ${response.status}`)
   }
 }
+
+// Update pen color when comment color changes during drawing
+watch(() => newComment.value.color, (color) => {
+  if (drawCtx && isDrawing.value) {
+    drawCtx.strokeStyle = colorHex[color] || '#ef4444'
+  }
+})
 
 // Lifecycle
 onMounted(() => {
