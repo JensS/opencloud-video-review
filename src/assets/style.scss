@@ -37,6 +37,51 @@
   }
 }
 
+// ===== Sidebar Toggle Arrow =====
+.sidebar-toggle {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 15;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 56px;
+  background: rgba(20, 20, 20, 0.85);
+  border: none;
+  border-radius: 6px 0 0 6px;
+  color: #a3a3a3;
+  cursor: pointer;
+  transition: all 0.15s;
+  padding: 0;
+
+  &:hover {
+    background: rgba(30, 30, 30, 0.95);
+    color: #e5e5e5;
+    width: 28px;
+  }
+
+  &.collapsed {
+    border-radius: 6px 0 0 6px;
+  }
+
+  .toggle-badge {
+    position: absolute;
+    top: 4px;
+    left: 2px;
+    background: #3b82f6;
+    color: white;
+    font-size: 9px;
+    padding: 0 3px;
+    border-radius: 6px;
+    min-width: 12px;
+    text-align: center;
+    line-height: 14px;
+  }
+}
+
 .draw-overlay {
   position: absolute;
   top: 0;
@@ -317,6 +362,24 @@
   align-items: center;
   justify-content: space-between;
   margin-top: 8px;
+}
+
+.comment-actions-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.draw-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 6px;
+
+  &.active {
+    background: #3b82f6;
+    color: white;
+  }
 }
 
 .drawing-label {

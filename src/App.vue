@@ -28,6 +28,20 @@
         <div v-if="activeAnnotation && reviewMode" class="annotation-overlay">
           <img :src="activeAnnotation" class="annotation-image" />
         </div>
+        <!-- Sidebar toggle arrow — right edge of video frame -->
+        <button
+          v-if="reviewMode"
+          class="sidebar-toggle"
+          :class="{ collapsed: !sidebarOpen }"
+          @click="sidebarOpen = !sidebarOpen"
+          :title="sidebarOpen ? 'Hide comments' : 'Show comments'"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline v-if="sidebarOpen" points="9 18 15 12 9 6"/>
+            <polyline v-else points="15 18 9 12 15 6"/>
+          </svg>
+          <span class="toggle-badge" v-if="!sidebarOpen && comments.length">{{ comments.length }}</span>
+        </button>
       </div>
 
       <!-- Controls -->
@@ -60,14 +74,6 @@
             @click.stop="jumpToComment(comment)"
           />
         </div>
-
-        <button v-if="reviewMode" class="ctrl-btn" @click="toggleDraw" :class="{ active: isDrawing }" title="Draw on frame">
-          ✏️
-        </button>
-
-        <button v-if="reviewMode" class="ctrl-btn" @click="sidebarOpen = !sidebarOpen" title="Toggle comments">
-          💬 <span class="badge" v-if="comments.length">{{ comments.length }}</span>
-        </button>
 
         <button class="ctrl-btn review-toggle" :class="{ active: reviewMode }" @click="toggleReviewMode" :title="reviewMode ? 'Disable review mode' : 'Enable review mode'">
           {{ reviewMode ? '📝' : '▶️' }}
@@ -124,10 +130,15 @@
           rows="3"
         />
         <div class="comment-actions">
-          <label class="drawing-label" v-if="drawingDataUrl">
-            <span>📎 Drawing attached</span>
-            <button @click="drawingDataUrl = ''" class="clear-drawing">✕</button>
-          </label>
+          <div class="comment-actions-left">
+            <button class="ctrl-btn draw-btn" @click="toggleDraw" :class="{ active: isDrawing }" title="Draw annotation on frame">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+            </button>
+            <label class="drawing-label" v-if="drawingDataUrl">
+              <span>📎 Drawing</span>
+              <button @click="drawingDataUrl = ''" class="clear-drawing">✕</button>
+            </label>
+          </div>
           <button @click="addComment" class="submit-btn" :disabled="!newComment.text.trim()">
             Add Comment
           </button>
