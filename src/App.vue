@@ -541,7 +541,11 @@ async function shareForReview() {
       if (!shareToken) throw new Error('No share token returned')
     }
 
-    const reviewUrl = `${baseUrl}/s/${shareToken}`
+    // Build a direct URL to our app route for the public share
+    // Pattern: /video-review/public/{token}/{filename}?fileId={itemId}
+    const fName = encodeURIComponent(fileName.value)
+    const itemId = resource.fileId || resource.id || ''
+    const reviewUrl = `${baseUrl}/video-review/public/${shareToken}/${fName}?fileId=${encodeURIComponent(itemId)}`
     await copyToClipboard(reviewUrl)
 
     shareBtnLabel.value = 'Copied!'
