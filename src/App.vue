@@ -87,7 +87,7 @@
     <aside class="sidebar" v-if="sidebarOpen && reviewMode">
       <div class="sidebar-header">
         <h2>Comments</h2>
-        <button v-if="isAuthenticated" class="share-review-btn" @click="shareForReview" :disabled="sharingInProgress" :title="shareTooltip">
+        <button class="share-review-btn" @click="shareForReview" :disabled="sharingInProgress" :title="shareTooltip">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
           {{ shareBtnLabel }}
         </button>
@@ -279,7 +279,7 @@ const newComment = ref({
   color: 'yellow' as string,
 })
 
-// Auth detection — check once, not reactive (storage isn't reactive)
+// Auth detection
 const isAuthenticated = ref(false)
 
 // Get video URL from OpenCloud resource
@@ -508,6 +508,7 @@ async function shareForReview() {
     if (!resource) throw new Error('No resource')
 
     const token = getAuthToken()
+    if (!token) throw new Error('Not authenticated — please log in to share')
     const baseUrl = window.location.origin
     const filePath = resource.path || resource.webDavPath || ''
     if (!filePath) throw new Error('No file path')

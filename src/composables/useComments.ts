@@ -1,4 +1,4 @@
-import { ref, type ComputedRef, watch } from 'vue'
+import { ref, type ComputedRef, watch, onUnmounted } from 'vue'
 import type { ReviewComment, ApprovalStatus } from '../types'
 
 /**
@@ -170,8 +170,9 @@ export function useComments(fileId: ComputedRef<string>, props: any) {
   }
 
   // Auto-save when comments change (skip initial load)
+  let saving = false
   watch(comments, () => {
-    if (loaded) saveComments()
+    if (loaded && !saving) saveComments()
   }, { deep: true })
 
   // Reload comments when fileId changes (resource may not be ready at mount)
@@ -180,6 +181,81 @@ export function useComments(fileId: ComputedRef<string>, props: any) {
       loadComments()
     }
   })
+
+  // Poll sidecar for real-time comment sync (every 5s)
+  let pollTimer: ReturnType<typeof setInterval> | null = null
+
+  function startPolling() {
+    if (pollTimer) return
+    pollTimer = setInterval(async () => {
+      const token = getAuthToken()
+      if (!token) return
+
+      const sidecarPath = getSidecarWebDavPath()
+      if (!sidecarPath) return
+
+      try {
+        const url = `${window.location.origin}/remote.php/dav${sidecarPath}`
+        const response = await fetch(url, {
+          method: 'GET',
+          headers: { 'Authorization': `Bearer ${token}` },
+          credentials: 'omit',
+        })
+        if (!response.ok) return
+
+        const text = await response.text()
+        if (!text) return
+
+        const data = JSON.parse(text)
+        const remote = data.comments || []
+        const remoteApproval = data.approval || 'pending'
+
+        // Merge: add any comments we don't have locally
+        const localIds = new Set(comments.value.map(c => c.id))
+        let changed = false
+        for (const rc of remote) {
+          if (!localIds.has(rc.id)) {
+            comments.value.push(rc)
+            changed = true
+          }
+        }
+
+        // Check for deletions: remove local comments not in remote (if remote has data)
+        if (remote.length > 0) {
+          const remoteIds = new Set(remote.map((c: any) => c.id))
+          const before = comments.value.length
+          comments.value = comments.value.filter(c => remoteIds.has(c.id))
+          if (comments.value.length !== before) changed = true
+        }
+
+        // Update approval if changed remotely
+        if (remoteApproval !== approval.value) {
+          approval.value = remoteApproval
+          changed = true
+        }
+
+        // Save merged state to localStorage (suppress watcher save loop)
+        if (changed) {
+          saving = true
+          saveToLocalStorage()
+          saving = false
+        }
+      } catch {
+        // Polling failure is silent
+      }
+    }, 5000)
+  }
+
+  function stopPolling() {
+    if (pollTimer) {
+      clearInterval(pollTimer)
+      pollTimer = null
+    }
+  }
+
+  // Auto-start polling, clean up on unmount
+  startPolling()
+  onUnmounted(stopPolling)
 
   return {
     comments,
