@@ -1,6 +1,6 @@
 # 🎬 OpenCloud Video Review
 
-**Frame.io-style video review and annotation for OpenCloud.**
+**Video review and annotation for OpenCloud.**
 
 A web extension for [OpenCloud](https://opencloud.eu) that turns any shared video link into a collaborative review tool. Clients and collaborators can leave timestamped comments, draw annotations on frames, approve or request revisions — and you can export everything as an EDL for DaVinci Resolve.
 
@@ -152,6 +152,6 @@ MIT License — see [LICENSE](LICENSE) for details.
 
 ## 🙏 Credits
 
-- Inspired by [Frame.io](https://frame.io) and [OpenVidReview](https://github.com/davidguva/OpenVidReview)
+- Inspired by [OpenVidReview](https://github.com/davidguva/OpenVidReview)
 - Built for the [OpenCloud](https://opencloud.eu) ecosystem
 - Created by [Jens Sage](https://jenssage.com) / [Studio Oggi](https://studio-oggi.com)
