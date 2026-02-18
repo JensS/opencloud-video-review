@@ -608,11 +608,8 @@ async function shareForReview() {
       shareUrl = `${reviewApiBase}/view/${encodeURIComponent(reviewId)}?share=${encodeURIComponent(shareToken)}&name=${encodeURIComponent(fileName.value)}`
     }
 
-    // Fallback: current URL with reviewId param
     if (!shareUrl) {
-      const url = new URL(window.location.href)
-      url.searchParams.set('reviewId', reviewId)
-      shareUrl = url.toString()
+      throw new Error('Failed to create or find a public share link. Auth token might be missing or invalid.')
     }
 
     await copyToClipboard(shareUrl)
